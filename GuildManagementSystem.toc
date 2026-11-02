@@ -4,6 +4,7 @@
 ## Version: 3.0.0
 ## IconTexture: Interface\AddOns\GuildManagementSystem\Media\Logo
 ## X-Wago-ID: j6jAa0NR
+## X-Curse-Project-ID: 1735032
 ## SavedVariables: GuildManagementSystemDB
 ## OptionalDeps: EllesmereUI, AdventForever
 
