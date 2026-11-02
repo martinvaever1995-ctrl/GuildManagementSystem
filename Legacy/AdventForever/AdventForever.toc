@@ -1,0 +1,8 @@
+## Interface: 16001
+## Title: AdventForever (moved to Guild Management System)
+## Notes: AdventForever is now Guild Management System (GMS). This last version only keeps your data until GMS picks it up.
+## Version: 2.1.0
+## IconTexture: Interface\AddOns\AdventForever\Media\Logo
+## SavedVariables: AdventForeverDB
+
+AdventForever.lua

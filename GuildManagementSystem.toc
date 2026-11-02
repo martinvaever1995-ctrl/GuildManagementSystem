@@ -3,6 +3,7 @@
 ## Notes: Guild effort, loot council, wishlists, crafters and attunements for WoW: Forever.
 ## Version: 3.0.0
 ## IconTexture: Interface\AddOns\GuildManagementSystem\Media\Logo
+## X-Wago-ID: j6jAa0NR
 ## SavedVariables: GuildManagementSystemDB
 ## OptionalDeps: EllesmereUI, AdventForever
 

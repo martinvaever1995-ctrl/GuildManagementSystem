@@ -1,5 +1,10 @@
 package-as: GuildManagementSystem
 
+# AdventForever's handover version ships next to GMS for a while, so updating from
+# AdventForever to GMS (same Wago project) keeps the old saved data loadable.
+move-folders:
+  GuildManagementSystem/Legacy/AdventForever: AdventForever
+
 # Kept in the repository, left out of the download.
 ignore:
   - docs

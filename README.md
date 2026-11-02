@@ -18,8 +18,8 @@ Made for **WoW: Forever**. Wago: https://addons.wago.io/addons/guildmanagementsy
   `Interface/AddOns/GuildManagementSystem/GuildManagementSystem.toc`.
 - Restart the game (a `/reload` isn't enough for a newly installed addon).
 - Everyone in the guild should install it.
-- **Coming from AdventForever?** Keep AdventForever (its last update) installed for your
-  first login with GMS; your data moves over by itself. Then you can remove it.
+- **Coming from AdventForever?** On Wago it updates to GMS by itself. The download includes
+  AdventForever's last version, which hands your data to GMS on your first login.
 
 ## Guild setup
 - The GM gets the guild setup window the first time (or `/gms setup`):

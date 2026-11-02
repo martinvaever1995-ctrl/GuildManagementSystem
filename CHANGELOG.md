@@ -1,6 +1,6 @@
 # Guild Management System
 
-## v3.0.0 (beta)
+## v3.0.0
 
 AdventForever is now **Guild Management System (GMS)**, and any guild can use it.
 
@@ -22,9 +22,10 @@ AdventForever is now **Guild Management System (GMS)**, and any guild can use it
 - The Recruit tab and the hidden recruiting channel are gone.
 
 ### Coming from AdventForever
-- Install GMS and keep AdventForever installed for your first login. AdventForever's last
-  update does nothing but hand its data to GMS: your effort history, ledger, settings,
-  wishlists, recipes and attunements move over. Guild loot stays on for your guild.
+- On Wago, AdventForever simply updates to GMS. The download includes AdventForever's last
+  version, which does nothing but hand its data to GMS on your first login: your effort
+  history, ledger, settings, wishlists, recipes and attunements move over. Guild loot stays
+  on for your guild.
 - GMS doesn't talk to AdventForever. Switch the whole guild over, officers first.
 - Afterwards you can remove AdventForever.
 
