@@ -5,7 +5,7 @@
 --  it joins one (VER). Hearing a newer version brings up the update card once per
 --  session; officers whisper outdated players once (addon message, no chat).
 --
---  /af versions asks the group (VERQ 2). Current clients answer with RDY: their
+--  /gms versions asks the group (VERQ 2). Current clients answer with RDY: their
 --  version, durability (repair %, the lowest item) and flask / elixir buffs.
 --  Older clients answer VERQ with VER alone, so they show a version but no
 --  readiness. Range is checked on our side.
@@ -14,12 +14,12 @@ local _, AF = ...
 local Versions = AF:NewModule("Versions")
 
 local ANSWER_WAIT = 5           -- seconds to wait for answers before calling someone "not installed"
-local REMIND_TEXT = "Your AdventForever is out of date (%s; the current one is %s). Please update it through WowUp, CurseForge or Wago."
-local INSTALL_TEXT = "Please install AdventForever (CurseForge, Wago or WowUp). The guild uses it for effort and loot."
+local REMIND_TEXT = "Your Guild Management System (GMS) addon is out of date (%s; the current one is %s). Please update it through WowUp, CurseForge or Wago."
+local INSTALL_TEXT = "Please install the Guild Management System addon (GMS on CurseForge, Wago or WowUp). The guild uses it for effort and loot."
 
 local versions = {}             -- full name -> version number
 local ready = {}                -- full name -> { d = repair %, low = lowest item %, f = flask, e = { elixirs }, at = GetTime() }
-local queriedAt                 -- GetTime() of the last /af versions question
+local queriedAt                 -- GetTime() of the last /gms versions question
 local waiting = false
 local newest = AF.VERSION       -- highest version seen this session
 local replied = {}

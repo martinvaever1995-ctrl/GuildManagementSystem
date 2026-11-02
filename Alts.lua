@@ -4,12 +4,12 @@
 --  The addon's saved data is shared by every character on a WoW account, so it
 --  knows for certain which characters are one player's. Each character the addon
 --  sees logging in is remembered; the first becomes the main, and the player can
---  pick another ("Make this my main" in the Me tab, or /af main).
+--  pick another ("Make this my main" in the Me tab, or /gms main).
 --
 --  Each character reports only itself to the officers (LINK): "I'm an alt of X"
 --  or "I'm a main". Officers record it as "link:<character>#<when the main was
 --  chosen>", so resends make the same event, and confirm it (LINKACK). Officers
---  can link and unlink by hand (/af link, /af unlink); their links beat reports.
+--  can link and unlink by hand (/gms link, /gms unlink); their links beat reports.
 -------------------------------------------------------------------------------
 local _, AF = ...
 local Alts = AF:NewModule("Alts")

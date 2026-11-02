@@ -12,9 +12,12 @@ local _, AF = ...
 local Theme = AF:NewModule("Theme")
 
 local WHITE = "Interface\\Buttons\\WHITE8x8"
-local DEFAULT_ACCENT = { 12 / 255, 210 / 255, 157 / 255 }
+-- The brand green from the GMS logo is too dark to read on our dark windows, so
+-- surfaces use it as it is (BRAND) and accents a brighter shade of the same hue.
+local BRAND = { 2 / 255, 53 / 255, 48 / 255 }
+local DEFAULT_ACCENT = { 17 / 255, 212 / 255, 193 / 255 }
 
-local MEDIA = "Interface\\AddOns\\AdventForever\\Media\\"
+local MEDIA = "Interface\\AddOns\\GuildManagementSystem\\Media\\"
 Theme.FONT = MEDIA .. "Inter-Regular.ttf"
 Theme.FONT_BOLD = MEDIA .. "Inter-SemiBold.ttf"
 Theme.ICONS = MEDIA .. "Icons\\"
@@ -27,6 +30,7 @@ local C = {
     sidebar = { 0.043, 0.047, 0.051, 1 },
     titleBar = { 0.043, 0.047, 0.051, 1 },
     card = { 0.09, 0.094, 0.106, 1 },
+    brand = { BRAND[1], BRAND[2], BRAND[3], 1 },
     border = { 0, 0, 0, 1 },
     line = { 0.165, 0.173, 0.188, 1 },
     track = { 0.141, 0.149, 0.165, 1 },
@@ -106,7 +110,7 @@ local function Skin(method, frame, args, after)
 end
 
 if EllesmereUI and EllesmereUI.RegisterSkin then
-    EllesmereUI.RegisterSkin("AdventForever", function(S)
+    EllesmereUI.RegisterSkin("GuildManagementSystem", function(S)
         skin = S
         for _, entry in ipairs(skinned) do Apply(entry) end
         if S.OnLooksChanged then S.OnLooksChanged(RepaintAccents) end
@@ -384,16 +388,14 @@ function Theme.Sidebar(window, items, width, onSelect, showOfficer)
     logo:SetSize(34, 34)
     logo:SetPoint("TOPLEFT", 12, -12)
     logo:SetTexture(Theme.LOGO)
-    local logoEdge = side:CreateTexture(nil, "BORDER")
-    logoEdge:SetPoint("TOPLEFT", logo, -1, 1)
-    logoEdge:SetPoint("BOTTOMRIGHT", logo, 1, -1)
-    logoEdge:SetColorTexture(unpack(C.border))
     local name = Theme.Text(side, 13, C.bright, nil, true)
     name:SetPoint("TOPLEFT", logo, "TOPRIGHT", 9, -2)
-    name:SetText("Advent")
+    name:SetPoint("RIGHT", side, "RIGHT", -8, 0)
+    name:SetWordWrap(false)
+    name:SetText("Guild")
     local sub = Theme.Text(side, 11, nil, nil, true)
     sub:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -2)
-    sub:SetText("Forever")
+    sub:SetText("GMS")
     Theme.Accented(sub, 1, "text")
     local divider = Theme.Line(side)
     divider:SetPoint("TOPLEFT", 10, -58)
@@ -401,13 +403,15 @@ function Theme.Sidebar(window, items, width, onSelect, showOfficer)
     divider:SetHeight(1)
 
     local nav = { buttons = {}, items = items }
+    -- The guild's name at the top (it's known a moment after login).
+    function nav:SetTitle(text) name:SetText(text) end
     nav.heading = Theme.Label(side, "Officers")
     for _, item in ipairs(items) do
         local b = CreateFrame("Button", nil, side)
         b:SetSize(width - 1, 28)
         b.bg = b:CreateTexture(nil, "BACKGROUND")
         b.bg:SetAllPoints()
-        b.bg:SetColorTexture(unpack(C.card))
+        b.bg:SetColorTexture(unpack(C.brand))
         b.marker = b:CreateTexture(nil, "ARTWORK")
         b.marker:SetPoint("TOPLEFT", 0, -4)
         b.marker:SetPoint("BOTTOMLEFT", 0, 4)
@@ -434,7 +438,7 @@ function Theme.Sidebar(window, items, width, onSelect, showOfficer)
         local officer = showOfficer()
         for _, item in ipairs(self.items) do
             local b = self.buttons[item.page]
-            local show = not item.officer or officer
+            local show = (not item.officer or officer) and (not item.feature or AF.Config:Feature(item.feature))
             b:SetShown(show)
             if show then
                 if item.officer and not headed then

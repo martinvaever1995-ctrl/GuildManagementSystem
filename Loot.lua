@@ -3,7 +3,7 @@
 --  and shows effort, and the officers pick who gets the item.
 --
 --  Loot authority (master looter, or raid leader without master loot):
---    corpse opened (or /af item) -> ITEMS to the raid -> RESP whispers back ->
+--    corpse opened (or /gms item) -> ITEMS to the raid -> RESP whispers back ->
 --    candidates grouped by response, effort shown -> officer clicks a player:
 --    master loot hands the item over, or without master loot the holder is told
 --    to trade it.
@@ -193,7 +193,7 @@ function Loot:StartSessions(links, sources)
 end
 
 -------------------------------------------------------------------------------
---  Test mode (/af test): a local session with made-up raiders and your popup,
+--  Test mode (/gms test): a local session with made-up raiders and your popup,
 --  to try the windows alone. Nothing is sent, recorded or announced.
 -------------------------------------------------------------------------------
 local TEST_RAIDERS = {
@@ -249,7 +249,7 @@ function Loot:HasTestWins() return #testWins > 0 end
 function Loot:StartTest(link)
     local gear = EquippedLinks()
     link = link or gear[math.random(#gear)]
-    if not link then return AF:Print("Equip something, or use /af test <shift-click an item>.") end
+    if not link then return AF:Print("Equip something, or use /gms test <shift-click an item>.") end
     FillTestHistory(gear)
 
     counter = counter + 1
@@ -327,6 +327,7 @@ function Loot:Council(authority)
 end
 
 local function CanVote(session)
+    if not AF.Config:Feature("votes") then return false end
     return session.authority == AF.playerName or AF.Config:IsOfficer(AF.playerName)
 end
 Loot.CanVote = CanVote

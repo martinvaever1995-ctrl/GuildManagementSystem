@@ -92,8 +92,8 @@ end
 --  Main window: tabs
 -------------------------------------------------------------------------------
 local main
-local Effort, Me, Rules, LootTab, Log, BankTab, Options, RecruitTab, WishTab, CraftTab, AttuneTab =
-    {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}
+local Effort, Me, Rules, LootTab, Log, BankTab, Options, WishTab, CraftTab, AttuneTab =
+    {}, {}, {}, {}, {}, {}, {}, {}, {}, {}
 
 local SIDEBAR_W = 150
 local CONTENT_W = 480
@@ -104,13 +104,12 @@ local NAV = {
     { page = 1, label = "Effort", icon = "effort" },
     { page = 2, label = "Me", icon = "me" },
     { page = 3, label = "Rules", icon = "rules" },
-    { page = 6, label = "Bank", icon = "bank" },
-    { page = 9, label = "Wishlist", icon = "wish" },
-    { page = 10, label = "Crafters", icon = "craft" },
-    { page = 11, label = "Attunements", icon = "attune" },
+    { page = 6, label = "Bank", icon = "bank", feature = "bank" },
+    { page = 8, label = "Wishlist", icon = "wish", feature = "wishlist" },
+    { page = 9, label = "Crafters", icon = "craft", feature = "crafters" },
+    { page = 10, label = "Attunements", icon = "attune", feature = "attune" },
     { page = 4, label = "Loot history", icon = "loot", officer = true },
     { page = 5, label = "Log", icon = "log", officer = true },
-    { page = 8, label = "Recruit", icon = "recruit", officer = true },
     { page = 7, label = "Options", icon = "options", officer = true },
 }
 
@@ -120,9 +119,9 @@ local function ShowPage(index)
 end
 
 local function CreateMain()
-    main = Theme.Window("AdventForeverMain", "", SIDEBAR_W + CONTENT_W, 584)
+    main = Theme.Window("GMSMain", "", SIDEBAR_W + CONTENT_W, 584)
     main.panels = {}
-    for i, page in ipairs({ Effort, Me, Rules, LootTab, Log, BankTab, Options, RecruitTab, WishTab, CraftTab, AttuneTab }) do
+    for i, page in ipairs({ Effort, Me, Rules, LootTab, Log, BankTab, Options, WishTab, CraftTab, AttuneTab }) do
         local panel = CreateFrame("Frame", nil, main)
         panel:SetPoint("TOPLEFT", SIDEBAR_W, -25)
         panel:SetPoint("BOTTOMRIGHT")
@@ -132,7 +131,10 @@ local function CreateMain()
         main.panels[i] = panel
     end
     main.nav = Theme.Sidebar(main, NAV, SIDEBAR_W, ShowPage, function() return AF.Ledger:CanRecord() end)
-    main:SetScript("OnShow", function() main.nav:Select(main.nav.selected or 1) end)
+    main:SetScript("OnShow", function()
+        main.nav:SetTitle((IsInGuild() and GetGuildInfo("player")) or "Guild")
+        main.nav:Select(main.nav.selected or 1)
+    end)
 end
 
 -- Officer pages come and go with officer status (it's known once the roster loads).
@@ -159,10 +161,9 @@ function UI:ShowLog() self:ShowMain(5) end
 function UI:ShowLootHistory() self:ShowMain(4) end
 function UI:ShowMe() self:ShowMain(2) end
 function UI:ShowRules() self:ShowMain(3) end
-function UI:ShowRecruit() self:ShowMain(8) end
-function UI:ShowWishlist() self:ShowMain(9) end
-function UI:ShowCrafters() self:ShowMain(10) end
-function UI:ShowAttunements() self:ShowMain(11) end
+function UI:ShowWishlist() self:ShowMain(8) end
+function UI:ShowCrafters() self:ShowMain(9) end
+function UI:ShowAttunements() self:ShowMain(10) end
 
 local function Visible(page) return main and main:IsShown() and page.panel and page.panel:IsShown() end
 
@@ -424,11 +425,15 @@ function Me:Refresh()
         local row = self.rows[category]
         local cap = AF.Config:Get(category .. "Max")
         local value = split[category]
-        row.value:SetText(value)
+        local off = not AF.Config:Feature(category)
+        row.value:SetText(off and "-" or value)
         row.cap:SetText("/ " .. cap)
         row.bar:SetValue(cap > 0 and value / cap or 0)
         local full = value >= cap and cap > 0
-        if category == "raid" then
+        if off then
+            row.cap:SetText("")
+            row.detail:SetText("Not used in this guild")
+        elseif category == "raid" then
             row.detail:SetText(now.total > 0 and ("%d of %d guild kills"):format(now.here, now.total) or "No guild kills yet")
         elseif category == "bank" then
             local rate = AF.Config:Get("goldPerPoint")
@@ -518,21 +523,25 @@ function Rules:Refresh()
     s.effort.body:SetText(("Each raid week you can score up to %s points. Your effort is the sum of the last 4 weeks, so at most %s. At the weekly reset the oldest week drops off."):format(
         N(weekMax), N(weekMax * 4)))
 
-    s.raid.title:SetText(("Raids: up to %s"):format(N(cfg("raidMax"))))
+    local function Title(category, label)
+        if not AF.Config:Feature(category) then return label .. ": off in this guild" end
+        return ("%s: up to %s"):format(label, N(cfg(category .. "Max")))
+    end
+    s.raid.title:SetText(Title("raid", "Raids"))
     s.raid.body:SetText(("Your share of the guild's boss kills this week. A kill is a guild kill when at least %s of the raid are guild members. Players an officer puts on the bench count as present."):format(
         N(cfg("guildKillShare") .. "%")))
 
-    s.bank.title:SetText(("Guild bank: up to %s"):format(N(cfg("bankMax"))))
+    s.bank.title:SetText(Title("bank", "Guild bank"))
     local goals = 0
     for _ in pairs(cfg("goals")) do goals = goals + 1 end
     s.bank.body:SetText(("%s point per %s deposited. Items on the wanted list count at their listed value (%s items, %s with a goal; see the Bank tab). Withdrawals count against it. Your own client reports your deposits when you close the bank."):format(
         N(1), N(cfg("goldPerPoint") .. "g"), N(wanted), N(goals)))
 
-    s.honor.title:SetText(("Honor: up to %s"):format(N(cfg("honorMax"))))
+    s.honor.title:SetText(Title("honor", "Honor"))
     s.honor.body:SetText(("Scales with your honor this week; %s honor gives the full score. Your own client counts the honor you earn while the addon is running."):format(
         N(BreakUpLargeNumbers(cfg("honorTarget")))))
 
-    s.dungeon.title:SetText(("Dungeons: up to %s"):format(N(cfg("dungeonMax"))))
+    s.dungeon.title:SetText(Title("dungeon", "Dungeons"))
     s.dungeon.body:SetText(("%s points for each end-game dungeon you finish (its last boss) with at least %s guild members in the group, you included. Leveling dungeons don't count. Your own client reports the run. Alts count with your main."):format(
         N(("%g"):format(cfg("dungeonPerRun"))), N(cfg("dungeonGuildMin"))))
 
@@ -620,8 +629,8 @@ function LootTab:Build(panel)
             GameTooltip:Show()
         end,
         onRowClick = function(e)
-            if e.test then return AF:Print("That's test data from /af test; it's gone after /reload.") end
-            StaticPopup_Show("ADVENTFOREVER_VOID", UI.DescribeEvent(e), nil, { id = e.id })
+            if e.test then return AF:Print("That's test data from /gms test; it's gone after /reload.") end
+            StaticPopup_Show("GMS_VOID", UI.DescribeEvent(e), nil, { id = e.id })
         end,
     })
 
@@ -726,79 +735,6 @@ function LootTab:Refresh()
 end
 
 -------------------------------------------------------------------------------
---  Recruit tab: guildless players who run the addon (ranks that can invite)
--------------------------------------------------------------------------------
-local function Ago(t)
-    local s = GetServerTime() - t
-    if s < 3600 then return math.max(1, math.floor(s / 60)) .. "m ago" end
-    if s < 86400 then return math.floor(s / 3600) .. "h ago" end
-    return math.floor(s / 86400) .. "d ago"
-end
-
-function RecruitTab:Build(panel)
-    self.panel = panel
-    self.info = Theme.Text(panel, 11, C.dim)
-    self.info:SetPoint("TOPLEFT", 16, -14)
-    self.info:SetWidth(448)
-    self.info:SetWordWrap(true)
-    self.list = Theme.List(panel, {
-        left = 14, top = -44, rows = 16, rowHeight = 24,
-        emptyText = "Nobody yet. Guildless players with the addon show up here.",
-        columns = {
-            { key = "name", label = "Player", width = 170 },
-            { key = "lvl", label = "Level", width = 50, justify = "RIGHT" },
-            { key = "seen", label = "Seen", width = 84, justify = "RIGHT" },
-            { key = "invite", label = "", width = 96, justify = "RIGHT", widget = function(row)
-                local b = Theme.Button(row, "Invite", 80, 20)
-                b:SetScript("OnClick", function() if row.data then AF.Recruit:Invite(row.data.name) end end)
-                return b
-            end },
-            { key = "forget", label = "", width = 46, justify = "RIGHT", widget = function(row)
-                local b = Theme.Button(row, "x", 20, 18)
-                b:SetScript("OnClick", function() if row.data then AF.Recruit:Forget(row.data.name) end end)
-                return b
-            end },
-        },
-        render = function(row, r)
-            row.cells.name:SetText(AF:ShortName(r.name))
-            row.cells.name:SetTextColor(ClassColor(r.c))
-            row.cells.lvl:SetText(r.lvl > 0 and r.lvl or "?")
-            row.cells.seen:SetText(r.online and "online" or Ago(r.seen))
-            if r.online then
-                row.cells.seen:SetTextColor(unpack(Theme.ROLE.ms[1]))
-            else
-                row.cells.seen:SetTextColor(unpack(C.dim))
-            end
-            row.cells.invite:SetShown(AF.Recruit:CanInvite())
-        end,
-        onRowEnter = function(row, r)
-            GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
-            GameTooltip:AddLine(AF:ShortName(r.name), ClassColor(r.c))
-            GameTooltip:AddLine(r.src == "group" and "Found in your group" or "Found on the realm channel", 0.8, 0.8, 0.8)
-            GameTooltip:AddLine("Last seen " .. date("%Y-%m-%d %H:%M", r.seen), 0.8, 0.8, 0.8)
-            GameTooltip:Show()
-        end,
-    })
-end
-
-function RecruitTab:Refresh()
-    if not self.panel then return end
-    if not AF.Recruit:CanInvite() then
-        self.info:SetText("Only guild ranks that can invite see recruits.")
-        self.list:SetData({})
-        return
-    end
-    local entries = AF.Recruit:Entries()
-    local online = 0
-    for _, r in ipairs(entries) do
-        if r.online then online = online + 1 end
-    end
-    self.info:SetText(("Guildless players running AdventForever: %d, %d online now. Players are kept for 14 days and leave the list once they're in the guild."):format(
-        #entries, online))
-    self.list:SetData(entries)
-end
-
--------------------------------------------------------------------------------
 --  Log tab
 -------------------------------------------------------------------------------
 function Log:Build(panel)
@@ -863,7 +799,7 @@ function Log:Build(panel)
         end,
         onRowClick = function(e)
             if e.k == "void" or AF.Ledger:IsVoided(e.id) then return end
-            StaticPopup_Show("ADVENTFOREVER_VOID", UI.DescribeEvent(e), nil, { id = e.id })
+            StaticPopup_Show("GMS_VOID", UI.DescribeEvent(e), nil, { id = e.id })
         end,
     })
 end
@@ -1532,7 +1468,7 @@ function AttuneTab:Build(panel)
         header:SetScript("OnLeave", function() GameTooltip:Hide() end)
         header:SetScript("OnClick", function()
             local a = self.defs[i]
-            if a and AF.Config:CanEdit() then StaticPopup_Show("ADVENTFOREVER_ATTUNE_REMOVE", a.n, nil, a.key) end
+            if a and AF.Config:CanEdit() then StaticPopup_Show("GMS_ATTUNE_REMOVE", a.n, nil, a.key) end
         end)
     end
 
@@ -1605,7 +1541,7 @@ AF:On("ATTUNEMENTS_UPDATED", function()
     if Visible(AttuneTab) then AttuneTab:Refresh() end
 end)
 
-StaticPopupDialogs.ADVENTFOREVER_ATTUNE_REMOVE = {
+StaticPopupDialogs.GMS_ATTUNE_REMOVE = {
     text = "Remove the %s attunement for the whole guild?",
     button1 = REMOVE,
     button2 = CANCEL,
@@ -1669,22 +1605,26 @@ function Options:Build(panel)
     backupNote:SetText("The ledger only lives in officers' saved data. Export it now and then and keep the text somewhere safe.")
     self.export = Theme.Button(backupCard, "Export", 90)
     self.export:SetPoint("BOTTOMLEFT", 12, 12)
-    self.export:SetScript("OnClick", function() SlashCmdList.ADVENTFOREVER("export") end)
+    self.export:SetScript("OnClick", function() SlashCmdList.GMS("export") end)
     self.import = Theme.Button(panel, "Import", 90)
     self.import:SetPoint("LEFT", self.export, "RIGHT", 8, 0)
-    self.import:SetScript("OnClick", function() SlashCmdList.ADVENTFOREVER("import") end)
+    self.import:SetScript("OnClick", function() SlashCmdList.GMS("import") end)
+    self.setupButton = Theme.Button(backupCard, "Guild setup", 110)
+    self.setupButton:SetPoint("BOTTOMRIGHT", -12, 12)
+    self.setupButton:SetScript("OnClick", function() UI:ShowSetup() end)
 end
 
 function Options:Refresh()
     if not self.panel then return end
     local canEdit = AF.Config:CanEdit()
     for _, row in ipairs(self.rows) do
-        row.box:SetText(tostring(AF.Config:Get(row.field.key)))
+        row.box:SetText(tostring(AF.Config:Raw(row.field.key)))
         local editable = canEdit and (not row.field.gmOnly or AF:IsGM())
         row.box:SetEnabled(editable)
         row.box:SetTextColor(editable and 1 or 0.5, editable and 1 or 0.5, editable and 1 or 0.5)
     end
     self.save:SetShown(canEdit)
+    self.setupButton:SetShown(canEdit)
     self.export:SetShown(AF.Ledger:CanRecord())
     self.import:SetShown(AF.Ledger:CanRecord())
     self.status:SetText(("Rules v%d%s"):format(AF.Config:Get("version"), canEdit and "" or "  ·  officers edit these"))
@@ -1775,7 +1715,7 @@ local function EquippedWidget(row)
 end
 
 local function CreateLoot()
-    loot = Theme.Window("AdventForeverLoot", "Loot", 680, 440)
+    loot = Theme.Window("GMSLoot", "Loot", 680, 440)
 
     loot.items = {}
     for i = 1, ITEM_BUTTONS do
@@ -1805,7 +1745,7 @@ local function CreateLoot()
 
     loot.list = Theme.List(loot, {
         left = 68, top = -82, rows = 13, rowHeight = 24,
-        emptyText = "No loot yet. Open a corpse as master looter, or /af item <shift-click>.",
+        emptyText = "No loot yet. Open a corpse as master looter, or /gms item <shift-click>.",
         columns = {
             { key = "name", label = "Name", width = 122 },
             { key = "response", label = "Response", width = 64, widget = function(row) return Theme.Pill(row) end },
@@ -1868,6 +1808,7 @@ local function CreateLoot()
             local canVote = session and not session.awarded and AF.Loot.CanVote(session)
             vote:SetEnabled(canVote and true or false)
             vote:SetAlpha((canVote or #c.voters > 0) and 1 or 0.4)
+            vote:SetShown(AF.Config:Feature("votes"))
         end,
         onRowEnter = function(row, c)
             EffortTooltip(row, c.name, c.member)
@@ -1910,7 +1851,7 @@ local function CreateLoot()
             if not session then return end
             if session.awarded then return AF:Printf("Already awarded to %s.", AF:ShortName(session.awarded)) end
             if session.authority ~= AF.playerName then return AF.Loot:Vote(session.sid, c.name) end
-            StaticPopup_Show("ADVENTFOREVER_AWARD", session.link, AF:ShortName(c.name), { sid = session.sid, name = c.name })
+            StaticPopup_Show("GMS_AWARD", session.link, AF:ShortName(c.name), { sid = session.sid, name = c.name })
         end,
     })
 
@@ -1941,7 +1882,7 @@ end
 local popup
 
 local function CreatePopup()
-    popup = Theme.Window("AdventForeverPopup", "Loot", 340, 184, 180)
+    popup = Theme.Window("GMSPopup", "Loot", 340, 184, 180)
     popup:SetFrameStrata("DIALOG")
 
     popup.timer = Theme.Bar(popup, 338, 3)
@@ -2048,7 +1989,7 @@ end
 local textWindow
 
 local function CreateTextWindow()
-    textWindow = Theme.Window("AdventForeverText", "", 520, 340)
+    textWindow = Theme.Window("GMSText", "", 520, 340)
     textWindow:SetFrameStrata("DIALOG")
     textWindow.hint = Theme.Text(textWindow, 11, C.dim)
     textWindow.hint:SetPoint("TOPLEFT", 14, -34)
@@ -2084,7 +2025,7 @@ end
 -------------------------------------------------------------------------------
 --  Award dialog
 -------------------------------------------------------------------------------
-StaticPopupDialogs.ADVENTFOREVER_VOID = {
+StaticPopupDialogs.GMS_VOID = {
     text = "Remove this event?\n\n%s\n\nIt stops counting everywhere. The removal itself is logged.",
     button1 = REMOVE or "Remove",
     button2 = CANCEL,
@@ -2098,7 +2039,7 @@ StaticPopupDialogs.ADVENTFOREVER_VOID = {
     preferredIndex = 3,
 }
 
-StaticPopupDialogs.ADVENTFOREVER_AWARD = {
+StaticPopupDialogs.GMS_AWARD = {
     text = "Award %s to %s?",
     button1 = ACCEPT,
     button2 = CANCEL,
@@ -2150,10 +2091,6 @@ AF:RegisterEvent("GET_ITEM_INFO_RECEIVED", function()
     end)
 end)
 
-AF:On("RECRUITS_UPDATED", function()
-    if Visible(RecruitTab) then RecruitTab:Refresh() end
-end)
-
 -------------------------------------------------------------------------------
 --  Trades window: items you owe someone, and items coming to you
 -------------------------------------------------------------------------------
@@ -2174,7 +2111,7 @@ local function RefreshTrades()
 end
 
 local function CreateTrades()
-    trades = Theme.Window("AdventForeverTrades", "Trades", 420, 230, -160)
+    trades = Theme.Window("GMSTrades", "Trades", 420, 230, -160)
     trades.list = Theme.List(trades, {
         left = 12, top = -32, rows = 6, rowHeight = 26,
         emptyText = "No trades waiting.",
@@ -2309,7 +2246,7 @@ local function RefreshVersions()
 end
 
 local function CreateVersions()
-    versionsWin = Theme.Window("AdventForeverVersions", "Versions & readiness", 500, 384, 40)
+    versionsWin = Theme.Window("GMSVersions", "Versions & readiness", 500, 384, 40)
     versionsWin.list = Theme.List(versionsWin, {
         left = 12, top = -32, rows = 12, rowHeight = 24,
         emptyText = "Join a group to check it.",
@@ -2420,7 +2357,7 @@ local function RefreshInvites()
 end
 
 local function CreateInvites()
-    invites = Theme.Window("AdventForeverInvites", "Raid invites", 380, 318, 60)
+    invites = Theme.Window("GMSInvites", "Raid invites", 380, 318, 60)
     local p = AF.Invites:Prefs()
 
     local ranksLabel = Theme.Label(invites, "Guild ranks")
@@ -2502,6 +2439,132 @@ function UI:ShowInvites()
 end
 
 AF:On("STANDINGS_UPDATED", RefreshInvites)
+
+-------------------------------------------------------------------------------
+--  Guild setup: who the officers are, what counts as effort, which features
+--  are on. Opens by itself for a new guild's GM; officers reopen it in Options.
+-------------------------------------------------------------------------------
+local setup
+
+-- The rank names the officer box covers, next to it.
+local function SetupRankNames()
+    local names = {}
+    for _, r in ipairs(AF.Invites:Ranks()) do
+        if r.index <= (tonumber(setup.rank:GetText()) or 0) then table.insert(names, r.name) end
+    end
+    setup.rankNames:SetText(table.concat(names, ", "))
+end
+
+-- Fills the window with the guild's current settings.
+local function RefreshSetup()
+    if not setup or not setup:IsShown() then return end
+    local cfg = AF.Config
+    setup.title:SetText("Guild setup  ·  " .. ((IsInGuild() and GetGuildInfo("player")) or "your guild"))
+    local canEdit, isGM = cfg:CanEdit(), AF:IsGM()
+    setup.rank:SetText(tostring(cfg:Raw("officerRank")))
+    setup.rank:SetEnabled(isGM)
+    SetupRankNames()
+    for _, f in ipairs(cfg.FEATURES) do
+        local check = setup.checks[f.key]
+        check.checked = cfg:Feature(f.key)
+        check.mark:SetShown(check.checked)
+        if check.cap then check.cap:SetText(tostring(cfg:Raw(f.key .. "Max"))) end
+    end
+    setup.save:SetShown(canEdit)
+    setup.status:SetText(canEdit and "" or "Only officers can change this.")
+end
+
+local function CreateSetup()
+    setup = Theme.Window("GMSSetup", "Guild setup", 460, 500, 40)
+    local y = -36
+    local function Heading(text)
+        local h = Theme.Label(setup, text)
+        h:SetPoint("TOPLEFT", 16, y)
+        y = y - 22
+    end
+    local intro = Theme.Text(setup, 11, C.dim)
+    intro:SetPoint("TOPLEFT", 16, y)
+    intro:SetWidth(428)
+    intro:SetWordWrap(true)
+    intro:SetText("Choose what Guild Management System does for your guild. Everyone in the guild gets these settings. You can change them later in Options.")
+    y = y - 40
+
+    Heading("Officers")
+    local rankLabel = Theme.Text(setup, 12)
+    rankLabel:SetPoint("TOPLEFT", 18, y - 3)
+    rankLabel:SetText("Guild ranks 0 to")
+    setup.rank = Theme.EditBox(setup, 36)
+    setup.rank:SetPoint("LEFT", rankLabel, "RIGHT", 8, 0)
+    setup.rank:SetNumeric(true)
+    setup.rank:SetMaxLetters(1)
+    setup.rank:SetScript("OnTextChanged", SetupRankNames)
+    setup.rankNames = Theme.Text(setup, 11, C.dim)
+    setup.rankNames:SetPoint("LEFT", setup.rank, "RIGHT", 8, 0)
+    setup.rankNames:SetWidth(330)
+    setup.rankNames:SetWordWrap(false)
+    local gmNote = Theme.Text(setup, 11, C.faint)
+    gmNote:SetPoint("TOPLEFT", 18, y - 24)
+    gmNote:SetText("Officers record effort, run the loot council and change these settings. Only the GM sets the ranks.")
+    y = y - 52
+
+    setup.checks = {}
+    local function Check(f)
+        local check = Theme.Check(setup, f.label, false, function() end)
+        check:SetPoint("TOPLEFT", 18, y)
+        if f.category then
+            check.cap = Theme.EditBox(setup, 44)
+            check.cap:SetPoint("TOPRIGHT", setup, "TOPRIGHT", -60, y + 4)
+            check.cap:SetNumeric(true)
+            local pts = Theme.Text(setup, 11, C.dim)
+            pts:SetPoint("LEFT", check.cap, "RIGHT", 6, 0)
+            pts:SetText("pts / week")
+        end
+        setup.checks[f.key] = check
+        y = y - 26
+    end
+    Heading("Effort counts")
+    for _, f in ipairs(AF.Config.FEATURES) do
+        if f.category then Check(f) end
+    end
+    y = y - 6
+    Heading("Features")
+    for _, f in ipairs(AF.Config.FEATURES) do
+        if not f.category then Check(f) end
+    end
+
+    setup.save = Theme.Button(setup, "Save and send to the guild", 190, 24)
+    setup.save:SetPoint("BOTTOMRIGHT", -14, 12)
+    setup.save:SetScript("OnClick", function()
+        local values = { caps = {}, features = {}, officerRank = tonumber(setup.rank:GetText()) }
+        for _, f in ipairs(AF.Config.FEATURES) do
+            local check = setup.checks[f.key]
+            values.features[f.key] = check.checked
+            if check.cap then values.caps[f.key .. "Max"] = tonumber(check.cap:GetText()) or 0 end
+        end
+        local ok, err = AF.Config:ApplySetup(values)
+        if not ok then return AF:Print(err) end
+        setup:Hide()
+    end)
+    setup.status = Theme.Text(setup, 11, C.dim)
+    setup.status:SetPoint("BOTTOMLEFT", 16, 18)
+    setup:SetScript("OnShow", RefreshSetup)
+end
+
+function UI:ShowSetup()
+    if not setup then CreateSetup() end
+    setup:Show()
+    RefreshSetup()
+end
+
+AF:On("CONFIG_UPDATED", RefreshSetup)
+
+-- A new guild's GM gets the setup once the guild's settings had a chance to arrive.
+local function OfferSetup()
+    if AF:IsGM() and not AF.Config:Raw("setupDone") then
+        AF:Print("Welcome! Set up Guild Management System for your guild (/gms setup).")
+        UI:ShowSetup()
+    end
+end
 AF:RegisterEvent("GROUP_ROSTER_UPDATE", function() C_Timer.After(1, RefreshInvites) end)
 
 -------------------------------------------------------------------------------
@@ -2566,7 +2629,7 @@ local function NudgeLines()
 
     local trades = AF.Trade:Count()
     if trades > 0 then
-        table.insert(lines, ("|cffffd055%d item%s to trade: /af trades|r"):format(trades, trades == 1 and "" or "s"))
+        table.insert(lines, ("|cffffd055%d item%s to trade: /gms trades|r"):format(trades, trades == 1 and "" or "s"))
     end
     return lines
 end
@@ -2649,11 +2712,11 @@ local function CreateCard(name, title, shown, onClick)
     return card
 end
 
--- Shows the card now (also /af nudge). Returns false if there's nothing to show.
+-- Shows the card now (also /gms nudge). Returns false if there's nothing to show.
 function UI:ShowNudge()
     local lines = NudgeLines()
     if not lines then return false end
-    if not nudge then nudge = CreateCard("AdventForeverNudge", "AdventForever", NUDGE_SHOWN, function() UI:ShowMe() end) end
+    if not nudge then nudge = CreateCard("GMSNudge", "Guild Management System", NUDGE_SHOWN, function() UI:ShowMe() end) end
     nudge:Present(table.concat(lines, "\n"))
     return true
 end
@@ -2668,7 +2731,7 @@ AF:On("NEWER_VERSION", function(version)
     if updateShown then return end
     updateShown = true
     AF:WhenUnrestricted(function()
-        if not updateCard then updateCard = CreateCard("AdventForeverUpdate", "AdventForever update", UPDATE_SHOWN) end
+        if not updateCard then updateCard = CreateCard("GMSUpdate", "Guild Management System update", UPDATE_SHOWN) end
         updateCard:Present(("Version %s%s|r is out; you have %s. Update through WowUp, CurseForge or Wago, then restart the game."):format(
             AccentHex(), AF.Versions.String(version), AF.VERSION_STRING))
     end)
@@ -2700,9 +2763,9 @@ end
 local MENU = {
     { "Effort", function() UI:ShowMain(1) end },
     { "Me", function() UI:ShowMe() end },
-    { "Wishlist", function() UI:ShowWishlist() end },
-    { "Crafters", function() UI:ShowCrafters() end },
-    { "Attunements", function() UI:ShowAttunements() end },
+    { "Wishlist", function() UI:ShowWishlist() end, nil, "wishlist" },
+    { "Crafters", function() UI:ShowCrafters() end, nil, "crafters" },
+    { "Attunements", function() UI:ShowAttunements() end, nil, "attune" },
     false,
     { "Check group", function() UI:ShowVersions() end },
     { "Raid invites", function() UI:ShowInvites() end },
@@ -2715,7 +2778,7 @@ local MENU = {
 }
 
 local function CreateMinimapMenu()
-    minimapMenu = CreateFrame("Frame", "AdventForeverMinimapMenu", UIParent, "BackdropTemplate")
+    minimapMenu = CreateFrame("Frame", "GMSMinimapMenu", UIParent, "BackdropTemplate")
     minimapMenu:SetFrameStrata("DIALOG")
     minimapMenu:SetClampedToScreen(true)
     Theme.Backdrop(minimapMenu, C.bg)
@@ -2736,6 +2799,7 @@ local function CreateMinimapMenu()
                 entry[2]()
             end)
             item.officer = entry[3]
+            item.feature = entry[4]
         else
             item = CreateFrame("Frame", nil, minimapMenu)
             item:SetSize(150, 9)
@@ -2752,7 +2816,7 @@ local function CreateMinimapMenu()
     end)
     minimapMenu:SetScript("OnShow", function(self) pcall(self.RegisterEvent, self, "GLOBAL_MOUSE_DOWN") end)
     minimapMenu:SetScript("OnHide", function(self) pcall(self.UnregisterEvent, self, "GLOBAL_MOUSE_DOWN") end)
-    table.insert(UISpecialFrames, "AdventForeverMinimapMenu")
+    table.insert(UISpecialFrames, "GMSMinimapMenu")
     minimapMenu:Hide()
 end
 
@@ -2762,7 +2826,7 @@ local function ToggleMinimapMenu(anchor)
     local officer = AF.Ledger:CanRecord()
     local y = -5
     for _, item in ipairs(minimapMenu.items) do
-        local show = not item.officer or officer
+        local show = (not item.officer or officer) and (not item.feature or AF.Config:Feature(item.feature))
         item:SetShown(show)
         if show then
             item:ClearAllPoints()
@@ -2777,7 +2841,7 @@ local function ToggleMinimapMenu(anchor)
 end
 
 local function CreateMinimapButton()
-    local b = CreateFrame("Button", "AdventForeverMinimapButton", Minimap)
+    local b = CreateFrame("Button", "GMSMinimapButton", Minimap)
     b:SetSize(31, 31)
     b:SetFrameStrata("MEDIUM")
     b:SetFrameLevel(8)
@@ -2815,7 +2879,7 @@ local function CreateMinimapButton()
     b:SetScript("OnDragStop", function(self) self:SetScript("OnUpdate", nil) end)
     b:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-        GameTooltip:AddLine("AdventForever")
+        GameTooltip:AddLine("Guild Management System")
         GameTooltip:AddLine("Left-click: open", 0.8, 0.8, 0.8)
         GameTooltip:AddLine("Right-click: menu", 0.8, 0.8, 0.8)
         GameTooltip:AddLine("Drag: move", 0.8, 0.8, 0.8)
@@ -2830,7 +2894,7 @@ function UI:SetMinimapShown(shown)
     MinimapPrefs().hidden = not shown or nil
     if shown and not minimapButton then CreateMinimapButton() end
     if minimapButton then minimapButton:SetShown(shown) end
-    if not shown then AF:Print("Minimap button hidden. /af minimap shows it again.") end
+    if not shown then AF:Print("Minimap button hidden. /gms minimap shows it again.") end
 end
 
 function UI:ToggleMinimap()
@@ -2842,10 +2906,11 @@ function UI:Enable()
         if UI.NudgeEnabled() and IsInGuild() then UI:ShowNudge() end
     end)
     if Minimap and not MinimapPrefs().hidden then CreateMinimapButton() end
+    C_Timer.After(25, OfferSetup)
     -- The addon list under the minimap (where the client has one).
     if AddonCompartmentFrame and AddonCompartmentFrame.RegisterAddon then
         pcall(AddonCompartmentFrame.RegisterAddon, AddonCompartmentFrame, {
-            text = "AdventForever",
+            text = "Guild Management System",
             icon = Theme.LOGO,
             notCheckable = true,
             func = function() UI:ToggleStandings() end,

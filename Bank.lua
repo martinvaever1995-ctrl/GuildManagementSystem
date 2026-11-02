@@ -275,7 +275,7 @@ function Bank:Enable()
     C_Timer.NewTicker(RESEND_INTERVAL, function() Bank:SendPending() end)
 end
 
--- Which guild bank functions this client has (for /af debug).
+-- Which guild bank functions this client has (for /gms debug).
 function Bank.ApiReport()
     local names = { "DepositGuildBankMoney", "WithdrawGuildBankMoney", "QueryGuildBankLog",
         "GetNumGuildBankMoneyTransactions", "GetGuildBankMoneyTransaction", "GetNumGuildBankTransactions",

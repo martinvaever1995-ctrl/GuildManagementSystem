@@ -8,7 +8,7 @@
 --  counts once. Reports wait in saved data until an officer confirms them.
 --
 --  Each officer who records a kill also gives credit to the players on their
---  bench list (/af bench), as if they had been there.
+--  bench list (/gms bench), as if they had been there.
 --
 --  Raid score = raidMax x (guild kills present for / guild kills that week).
 -------------------------------------------------------------------------------
@@ -97,11 +97,11 @@ end
 
 -- ENCOUNTER_END: encounterID, encounterName, difficultyID, groupSize, success.
 -- On Forever these can be secret during the encounter lockdown; if so we can't
--- tell a kill from a wipe, and an officer records it with /af kill.
+-- tell a kill from a wipe, and an officer records it with /gms kill.
 AF:RegisterEvent("ENCOUNTER_END", function(_, encounterID, encounterName, difficultyID, _, success)
     if AF:IsSecret(encounterID) or AF:IsSecret(success) or AF:IsSecret(difficultyID) then
         if IsInRaid() and (AF.Ledger:CanRecord() or UnitIsGroupLeader("player")) then
-            AF:Print("Couldn't read the encounter result (game restriction). If it was a kill: /af kill <boss name>")
+            AF:Print("Couldn't read the encounter result (game restriction). If it was a kill: /gms kill <boss name>")
         end
         return
     end
@@ -111,10 +111,10 @@ AF:RegisterEvent("ENCOUNTER_END", function(_, encounterID, encounterName, diffic
     AF:WhenUnrestricted(function() OnKill(encounterID, encounterName, difficultyID) end)
 end)
 
--- /af kill <boss>: an officer records a kill for the current group by hand.
+-- /gms kill <boss>: an officer records a kill for the current group by hand.
 function Attendance:Manual(bossName)
     if not AF.Ledger:CanRecord() then return AF:Print("Only officers can record kills by hand.") end
-    if bossName == "" then return AF:Print("Usage: /af kill <boss name>") end
+    if bossName == "" then return AF:Print("Usage: /gms kill <boss name>") end
     local report, why = BuildReport(0, bossName, 0)
     if not report then return AF:Print(why) end
     self:Record(report)

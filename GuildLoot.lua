@@ -34,6 +34,7 @@ end
 
 -- In a raid instance, enough guild members, and the raid leader hands out loot.
 function GuildLoot.Active()
+    if not AF.Config:Feature("guildLoot") then return false end
     if not IsInRaid() or AF:HasMasterLoot() then return false end
     local _, instanceType = IsInInstance()
     if instanceType ~= "raid" then return false end
@@ -181,7 +182,7 @@ AF:RegisterEvent("CHAT_MSG_LOOT", function(_, text)
     Watch(text)
 end)
 
--- For /af debug.
+-- For /gms debug.
 function GuildLoot.Status()
     return GuildLoot.Active(), type(RollOnLoot) == "function", #WATCH
 end

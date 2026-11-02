@@ -31,7 +31,7 @@
 --  swap whatever they are missing with the officers online (per week and origin:
 --  a count and the highest sequence number). Events are never edited, so merging
 --  is just a union. Raiders get the totals as snapshots (see Standings.lua), and
---  /af export / /af import keep a copy outside the game.
+--  /gms export / /gms import keep a copy outside the game.
 -------------------------------------------------------------------------------
 local _, AF = ...
 local Ledger = AF:NewModule("Ledger")
@@ -720,7 +720,7 @@ end
 function Ledger:Import(text)
     if not self:CanRecord() then return nil, "Only officers can import." end
     text = (text or ""):gsub("%s", "")
-    if text:sub(1, #EXPORT_PREFIX) ~= EXPORT_PREFIX then return nil, "That isn't an AdventForever ledger export." end
+    if text:sub(1, #EXPORT_PREFIX) ~= EXPORT_PREFIX then return nil, "That isn't a GMS ledger export." end
     local raw = Decode(text:sub(#EXPORT_PREFIX + 1):gsub("[^%w%+/=]", ""))
     local list = raw and AF.Comm.Deserialize(raw)
     if type(list) ~= "table" then return nil, "The export is damaged (copied only part of it?)." end

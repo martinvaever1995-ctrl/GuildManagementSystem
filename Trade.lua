@@ -106,7 +106,7 @@ AF.Comm:On("AWARDED", function(sender, data)
     table.insert(mine.owe, { sid = data.sid, l = data.l, id = id, to = data.to, lootedAt = lootedAt,
         at = GetServerTime(), warned = {} })
     Announce("HOLD", { sid = data.sid, to = data.to })
-    AF:Printf("You have %s: trade it to %s. /af trades", data.l, AF:ShortName(data.to))
+    AF:Printf("You have %s: trade it to %s. /gms trades", data.l, AF:ShortName(data.to))
     AF.UI:ShowTrades()
     Changed()
 end)

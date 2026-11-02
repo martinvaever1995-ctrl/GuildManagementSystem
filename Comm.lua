@@ -47,7 +47,7 @@ local function Write(v, out)
         end
         out[#out + 1] = "}"
     else
-        error("AdventForever: cannot serialize a " .. t)
+        error("GMS: cannot serialize a " .. t)
     end
 end
 

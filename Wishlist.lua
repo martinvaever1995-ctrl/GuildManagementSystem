@@ -52,6 +52,7 @@ end
 
 -- Rank of an item on this character's list (nil if not on it).
 function Wishlist:MyRank(linkOrID)
+    if not AF.Config:Feature("wishlist") then return nil end
     local id = Wishlist.ItemID(linkOrID)
     for rank, wanted in ipairs(self:Mine()) do
         if wanted == id then return rank end
@@ -142,6 +143,7 @@ end
 -- Who has this item on their list: { { name, rank }, ... }, best rank first.
 -- Officers see everyone they've heard from; others only this account's characters.
 function Wishlist:Wishers(linkOrID)
+    if not AF.Config:Feature("wishlist") then return {} end
     local id = Wishlist.ItemID(linkOrID)
     if not id then return {} end
     if not index then BuildIndex() end
@@ -217,7 +219,7 @@ end)
 
 function Wishlist:Enable()
     C_Timer.After(LOGIN_DELAY, function()
-        if not IsInGuild() then return end
+        if not IsInGuild() or not AF.Config:Feature("wishlist") then return end
         if AF.Ledger:CanRecord() then
             AF.Comm:Send("WISHQ", true, "GUILD")
         else

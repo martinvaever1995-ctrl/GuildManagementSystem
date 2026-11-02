@@ -1,104 +1,57 @@
-# AdventForever
+# Guild Management System (GMS)
 
-**Guild effort, shown at loot time.** AdventForever tracks how much each of us puts into the
-guild (raiding, the guild bank, PvP and dungeons together) and shows it to the officers when
-they hand out loot.
+**Effort tracking, loot council and guild tools for WoW: Forever.**
 
-The addon never decides who gets an item. **Officers do.** AdventForever makes sure they have
-the full picture, and that everyone can see how it's counted.
+GMS shows your officers how much each member puts into the guild (raids, guild bank, honor
+and end-game dungeons with guildies) right when they hand out loot. It also gives the whole
+guild wishlists, a profession directory, attunements, raid readiness and raid invites.
 
----
+The addon never ranks players or decides loot. Your officers do. GMS gives them the
+information.
 
-## What you get as a raider
+## Set up for your guild
+The GM gets a short setup the first time:
+- **Officer ranks:** who records effort and runs the loot council.
+- **What counts as effort:** raids, guild bank, honor and/or dungeons, with your own points
+  per week.
+- **Which features are on:** votes, wishlists, crafters, attunements, guild loot.
 
-- **A loot popup** when an item drops. Answer **Main spec**, **Off spec** or **Pass** in one
-  click. The popup also shows:
-  - what you're wearing in that slot
-  - how much of an upgrade the item is (**+8 ilvl**)
-  - room for a short note, like "BiS"
-- **Your own effort** in the **Me** tab: points per category this week, what's still
-  available, and your last 4 weeks.
-- **The rules, in plain words**, in the **Rules** tab, always with the guild's current
-  numbers.
-- **Trade reminders:** if you're holding an item someone else won, the addon shows who it's
-  for, how long you have left to trade it, and puts it in the trade window for you.
-- **Alts count with your main:** your characters on the same account link themselves.
+Settings reach every member automatically, and officers can change them any time.
 
-You don't need to do anything else: install it and play.
+## Effort
+- Weekly points per category. **Effort** is the sum of the last 4 weeks, so there's no decay
+  to manage and old weeks simply drop off at the reset.
+- **Raids:** your share of the guild's boss kills (a kill counts when enough of the raid is from
+  the guild).
+- **Guild bank:** gold and items from the guild's wanted list, minus withdrawals.
+- **Honor:** up to a weekly target.
+- **Dungeons:** end-game dungeons finished with guildies.
+- Mains and alts count as one player.
 
-## How effort works
+## Loot council
+- **Raiders** answer Main spec / Off spec / Pass in a popup, with the item level difference,
+  an optional note, wishlist and "can't use" flags.
+- **The loot window** shows every response sorted by effort, with the last 4 weeks, items won,
+  equipped items, notes and wishlist ranks.
+- **Officer votes,** a **loot history,** and **trade tracking** when there's no master loot.
+- **Optional guild loot:** in guild raids, raiders auto-pass on Rare+ and the raid leader
+  needs, so nothing gets rolled away.
 
-Every raid week you can score up to **120 points**:
+## For the whole guild
+- **Wishlists:** rank up to 10 items you want. Only officers see them.
+- **Crafters:** search who can craft what, see everyone's professions, and get "Crafted by"
+  on tooltips.
+- **Attunements:** a grid of who's attuned to what. Officers add new ones as Forever releases
+  them.
+- **Check group:** addon versions, repair, flasks/elixirs and range for the whole group.
+- **Raid invites:** invite everyone online at chosen ranks and minimum effort, or by
+  whisper keyword.
+- **Bank goals:** a wanted list with values and targets, with progress for everyone to see.
+- A modern, flat look with a minimap button. It follows your EllesmereUI theme if you use it.
 
-| Category | Up to | How |
-|---|---|---|
-| **Raids** | 50 | Your share of the guild's boss kills that week |
-| **Guild bank** | 30 | Gold and wanted items you deposit |
-| **Honor** | 20 | Honor you earn, up to a weekly target |
-| **Dungeons** | 20 | 2.5 per dungeon finished with 3+ guild members |
-
-Your **effort** is the sum of your last 4 weeks (max 480). At the weekly reset the oldest week
-drops off, so recent effort always counts most, and nobody gets locked out by old numbers.
-
-A boss kill counts as a guild kill when at least 75% of the raid are guild members. Bench
-players get credit too.
-
-## What officers get
-
-- **A loot window:**
-  - every response grouped by Main / Off / Pass and sorted by effort
-  - each player's weekly history, items won this week, equipped gear, item level difference,
-    and their note
-  - click anyone to award
-- **Works without master loot:** start a session with `/af item`, and the addon tracks the
-  trade until it's delivered.
-- **Loot history:** who won what over the last 4 or 8 weeks, by item or by player.
-- **Guild bank tracking** from both the depositor's client and the bank log, with an editable
-  wanted list.
-- **A shared ledger:** every point and award is recorded and synced between officers. Mistakes
-  can be removed with a click, and everything can be exported as a backup.
-- **Recruiting:** guildless players who run the addon show up with an **Invite** button.
-
-## Getting started
-
-1. Install AdventForever. Everyone in the guild should have it.
-2. Type **`/af`** to open the main window.
-3. On an alt? Open the **Me** tab and make sure the right character is your main.
-
-That's it. Points come in on their own as you raid, deposit and PvP.
-
-## Commands
-
-| Command | What it does |
-|---|---|
-| `/af` | Main window |
-| `/af me` | Your own effort |
-| `/af rules` | How effort is scored |
-| `/af trades` | Items you have to trade, or that are coming to you |
-| `/af main` | Make this character your main |
-| `/af help` | All commands, including the officer ones |
-
-## FAQ
-
-**Does a high score mean I get the item?**
-No. Effort is information for the officers. They make the call, and the loot window only sorts
-as a guide.
-
-**I deposited gold but my score didn't change.**
-Points are whole numbers: with 1 point per 50 gold, a small deposit can still be 0 points. Your
-deposit is counted in the Me tab even before it adds a point.
-
-**Why does my number say "as of …"?**
-Raiders see the numbers the last online officer sent. They update as soon as an officer is
-online.
-
-**I play two accounts.**
-Ask an officer to link your characters with `/af link`.
-
-## Requirements
-
-- **WoW: Forever**
-- **Optional:** EllesmereUI. With it, AdventForever matches your EllesmereUI theme, font and
-  accent color.
-
-*An internal addon for our guild.*
+## Good to know
+- Everyone in the guild should install it.
+- Data is kept per guild, so characters in different guilds never mix.
+- Officers can back up the ledger as text (`/gms export`).
+- Requires an English game client for some detection.
+- `/gms` opens the window. `/gms help` lists every command.

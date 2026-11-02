@@ -266,7 +266,7 @@ end
 
 local scanPending
 local function ScanSoon(scanner)
-    if scanPending then return end
+    if scanPending or not AF.Config:Feature("crafters") then return end
     scanPending = true
     C_Timer.After(1, function()
         scanPending = false
@@ -387,6 +387,7 @@ end
 
 -- Who can make an item: { { name, prof, online }, ... }, online first.
 function Professions:CraftersOf(itemID)
+    if not AF.Config:Feature("crafters") then return {} end
     if not index then BuildIndex() end
     return SortCrafters(index[itemID] or {})
 end
@@ -514,7 +515,7 @@ AF.Comm:On("PROFQ", function(sender, data)
 end)
 
 local function SendDigest()
-    if not IsInGuild() then return end
+    if not IsInGuild() or not AF.Config:Feature("crafters") then return end
     wipe(offers)
     AF.Comm:Send("PROFD", Digest(), "GUILD", nil, true)
     -- The digest goes on the slow lane; give it time to arrive before counting offers.
@@ -545,7 +546,7 @@ function Professions:Enable()
     C_Timer.After(DIGEST_DELAY, SendDigest)
 end
 
--- For /af debug: which recipe API this client has, and what we know.
+-- For /gms debug: which recipe API this client has, and what we know.
 function Professions.ApiReport()
     local api = (type(_G.GetNumTradeSkills) == "function" and "classic trade skills")
         or (C_TradeSkillUI and C_TradeSkillUI.GetAllRecipeIDs and "C_TradeSkillUI") or "none"

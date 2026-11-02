@@ -10,14 +10,14 @@
 --  Only end-game dungeons count. Final bosses: the classic dungeons' are built in
 --  below (encounter IDs as the game reports them; several dungeons have one per
 --  wing); the leveling ones are known but don't count. New Forever dungeons
---  aren't known yet: an officer marks the final boss once with /af final after
+--  aren't known yet: an officer marks the final boss once with /gms final after
 --  killing it, which also counts that run. Officers' changes sync as config.
 -------------------------------------------------------------------------------
 local _, AF = ...
 local Dungeons = AF:NewModule("Dungeons")
 
 local RESEND_INTERVAL = 300
-local FINAL_WINDOW = 15 * 60    -- /af final can still count a kill this recent
+local FINAL_WINDOW = 15 * 60    -- /gms final can still count a kill this recent
 
 -- encounterID -> "Dungeon: Boss". Leveling dungeons, which don't count.
 local LEVELING = {
@@ -116,7 +116,7 @@ local function Submit(kill)
 end
 
 -- ENCOUNTER_END in a 5-player dungeon. Values can be secret during the encounter
--- lockdown; then the kill can't be read (an officer can still use /af final).
+-- lockdown; then the kill can't be read (an officer can still use /gms final).
 AF:RegisterEvent("ENCOUNTER_END", function(_, encounterID, encounterName, _, _, success)
     local _, instanceType = IsInInstance()
     if instanceType ~= "party" then return end
@@ -134,11 +134,11 @@ AF:RegisterEvent("ENCOUNTER_END", function(_, encounterID, encounterName, _, _, 
     end)
 end)
 
--- /af final: an officer marks (or unmarks) the boss just killed as its dungeon's
+-- /gms final: an officer marks (or unmarks) the boss just killed as its dungeon's
 -- final boss. Marking also counts the run that was just finished.
 function Dungeons:ToggleFinal()
     if not AF.Ledger:CanRecord() then return AF:Print("Only officers can mark final bosses.") end
-    if not lastKill then return AF:Print("Kill the dungeon's last boss first, then type /af final.") end
+    if not lastKill then return AF:Print("Kill the dungeon's last boss first, then type /gms final.") end
     local enc = lastKill.enc
     if FINALS[enc] then return AF:Printf("%s is already a built-in final boss.", lastKill.en) end
     if LEVELING[enc] and not AF.Config:Get("finals")[enc] then

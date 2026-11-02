@@ -15,7 +15,7 @@
 --  Honor score = honorMax x min(1, honor / honorTarget).
 --
 --  Verifying other players' honor by inspecting them needs an inspect-honor API;
---  /af debug says whether this client has one.
+--  /gms debug says whether this client has one.
 -------------------------------------------------------------------------------
 local _, AF = ...
 local Honor = AF:NewModule("Honor")
@@ -115,7 +115,7 @@ function Honor:Enable()
     C_Timer.NewTicker(SEND_GAP, function() Honor:Send() end)
 end
 
--- What this client offers (for /af debug).
+-- What this client offers (for /gms debug).
 function Honor.ApiReport()
     local function Has(name) return type(_G[name]) == "function" end
     local function Event(name)

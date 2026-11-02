@@ -1,6 +1,6 @@
 -------------------------------------------------------------------------------
 --  Config.lua -- shared rules (category caps and so on), edited by officers in
---  the options window (/af options). Every change bumps the version and is
+--  the options window (/gms options). Every change bumps the version and is
 --  broadcast to the guild. Clients accept config only from officers: guild
 --  members at rank officerRank or higher (rank 0 = GM). Only the GM's officerRank
 --  is ever accepted, so officers can't widen their own circle.
@@ -26,7 +26,25 @@ local DEFAULTS = {
     responseTimeout = 60,   -- seconds the loot popup stays up
     attunes = {},           -- attunements officers added: key -> { n = name, s = short label, q = { questIDs }, i = itemID }
     attunesOff = {},        -- built-in attunements officers hid: key -> true
+    features = {},          -- feature switches: key -> true / false (missing: the default below)
+    setupDone = false,      -- the GM went through guild setup
 }
+
+-- What a guild can switch on and off. Effort categories that are off count 0 and
+-- leave the weekly maximum; switched-off features disappear from the windows.
+Config.FEATURES = {
+    { key = "raid", label = "Raids: share of the guild's boss kills", default = true, category = true },
+    { key = "bank", label = "Guild bank: gold and wanted items deposited", default = true, category = true },
+    { key = "honor", label = "Honor earned each week", default = true, category = true },
+    { key = "dungeon", label = "End-game dungeons with guildies", default = true, category = true },
+    { key = "votes", label = "Officer votes in the loot window", default = true },
+    { key = "wishlist", label = "Wishlists", default = true },
+    { key = "crafters", label = "Crafters (profession directory)", default = true },
+    { key = "attune", label = "Attunements", default = true },
+    { key = "guildLoot", label = "Guild loot: in guild raids raiders pass on Rare+, the leader needs", default = false },
+}
+local FEATURE_DEFAULT = {}
+for _, f in ipairs(Config.FEATURES) do FEATURE_DEFAULT[f.key] = f.default end
 
 -- What the options tab edits, in order (the wanted list has its own tab).
 Config.FIELDS = {
@@ -81,6 +99,9 @@ local function Normalize(t)
     for key, off in pairs(t.attunesOff) do
         if type(key) ~= "string" or off ~= true then t.attunesOff[key] = nil end
     end
+    for key, on in pairs(t.features) do
+        if FEATURE_DEFAULT[key] == nil or type(on) ~= "boolean" then t.features[key] = nil end
+    end
     return t
 end
 
@@ -89,7 +110,61 @@ function Config:Init()
     cfg = AF.db.config
 end
 
-function Config:Get(key) return cfg[key] end
+-- A category that's switched off has a cap of 0 everywhere.
+local CATEGORY_CAP = { raidMax = "raid", bankMax = "bank", honorMax = "honor", dungeonMax = "dungeon" }
+
+function Config:Get(key)
+    local category = CATEGORY_CAP[key]
+    if category and not self:Feature(category) then return 0 end
+    return cfg[key]
+end
+
+-- The stored value, even for a switched-off category (the options window).
+function Config:Raw(key) return cfg[key] end
+
+function Config:Feature(key)
+    local on = cfg.features[key]
+    if on == nil then return FEATURE_DEFAULT[key] == true end
+    return on
+end
+
+-- Guild setup in one go: { officerRank (GM only), caps = { raidMax, ... }, features = { key = bool } }.
+-- Returns nil, error on bad input.
+function Config:ApplySetup(setup)
+    if not self:CanEdit() then return nil, "Only officers can change the guild setup." end
+    local caps, total = {}, 0
+    for key in pairs(CATEGORY_CAP) do
+        local v = setup.caps[key]
+        if type(v) ~= "number" or v < 0 or v > 100 then
+            return nil, "Each category's points must be a number from 0 to 100."
+        end
+        caps[key] = math.floor(v)
+        if setup.features[CATEGORY_CAP[key]] then total = total + caps[key] end
+    end
+    if total > 200 then return nil, "The categories you use can add up to at most 200 a week." end
+    if total == 0 then return nil, "Switch on at least one effort category with points." end
+    for key, v in pairs(caps) do cfg[key] = v end
+    if AF:IsGM() and type(setup.officerRank) == "number" and setup.officerRank >= 0 and setup.officerRank <= 9 then
+        cfg.officerRank = math.floor(setup.officerRank)
+    end
+    for _, f in ipairs(self.FEATURES) do
+        if type(setup.features[f.key]) == "boolean" then cfg.features[f.key] = setup.features[f.key] end
+    end
+    cfg.setupDone = true
+    self:Publish()
+    return true
+end
+
+-- Saves the feature switches and, once, that setup is done (officers).
+function Config:SetFeatures(features, setupDone)
+    if not self:CanEdit() then return nil, "Only officers can change the guild's features." end
+    for _, f in ipairs(self.FEATURES) do
+        if type(features[f.key]) == "boolean" then cfg.features[f.key] = features[f.key] end
+    end
+    if setupDone then cfg.setupDone = true end
+    self:Publish()
+    return true
+end
 
 -------------------------------------------------------------------------------
 --  Who counts as an officer
@@ -149,7 +224,7 @@ AF.Comm:On("CFGQ", function(sender, theirVersion)
     elseif theirVersion > cfg.version then
         -- Our saved config is older than the guild's (reinstall, new PC). Jump past it.
         cfg.version = theirVersion
-        AF:Printf("Guild members have config v%d, newer than yours. Check /af options; your next save replaces it.", theirVersion)
+        AF:Printf("Guild members have config v%d, newer than yours. Check /gms options; your next save replaces it.", theirVersion)
     end
 end)
 

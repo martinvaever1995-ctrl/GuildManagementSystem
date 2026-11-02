@@ -1,6 +1,36 @@
-# AdventForever
+# Guild Management System
 
-## v2.0.5 (beta)
+## v3.0.0 (beta)
+
+AdventForever is now **Guild Management System (GMS)**, and any guild can use it.
+
+### For every guild
+- **Guild setup:** the GM gets a short setup the first time (`/gms setup`, or Options → Guild setup):
+  - officer ranks
+  - which effort categories count (raids, guild bank, honor, dungeons) and their points per week
+  - which features are on (votes, wishlists, crafters, attunements, guild loot)
+  Officers can change it any time, and it reaches every member automatically.
+- **Data per guild:** characters in different guilds keep separate ledgers, settings and
+  lists. A character's first login, or a guild change, can ask for one reload.
+- **Guild loot auto-pass is off by default.** Officers switch it on in guild setup.
+- Switched-off categories count 0 and show as "off". Switched-off features disappear from the
+  window and the minimap menu.
+- The window shows your guild's name. New neutral logo.
+
+### Changed
+- The command is now `/gms` (also `/guildmanagement`).
+- The Recruit tab and the hidden recruiting channel are gone.
+
+### Coming from AdventForever
+- Install GMS and keep AdventForever installed for your first login. AdventForever's last
+  update does nothing but hand its data to GMS: your effort history, ledger, settings,
+  wishlists, recipes and attunements move over. Guild loot stays on for your guild.
+- GMS doesn't talk to AdventForever. Switch the whole guild over, officers first.
+- Afterwards you can remove AdventForever.
+
+## Earlier versions, as AdventForever
+
+### v2.0.5 (beta)
 
 ### Dungeons
 - Only **end-game dungeons** count toward the dungeon score now: Blackrock Depths, Lower and
@@ -9,11 +39,11 @@
 - Leveling-dungeon runs already recorded this week no longer count either.
 - New Forever dungeons still count once an officer marks their final boss with `/af final`.
 
-## v2.0.4 (beta)
+### v2.0.4 (beta)
 
 - AdventForever is now on CurseForge as well. No other changes since 2.0.3.
 
-## v2.0.3 (beta)
+### v2.0.3 (beta)
 
 ### Minimap button
 - A minimap button with the Advent logo: **left-click** opens the window, **right-click** opens
@@ -35,7 +65,7 @@
   class-restricted items like tier pieces). Hover them for the reason.
 - The loot popup tells you too: **You can't use this**.
 
-## v2.0.2 (beta)
+### v2.0.2 (beta)
 
 ### Versions and raid readiness
 - `/af versions` (or `/af check`) opens a window listing everyone in your group:
@@ -87,7 +117,7 @@
 - Your client checks your attunements after login, after you turn in a quest and when your
   bags change, and shares them with the guild.
 
-## v2.0.1 (beta)
+### v2.0.1 (beta)
 
 ### Guild loot in raids
 - In a guild raid (a raid instance with at least 75% guild members), raiders **automatically
@@ -98,7 +128,7 @@
   the addon can't be made to pass, but the warning shows it.
 - `/af debug` shows whether this client allows rolling by addon.
 
-## v2.0.0
+### v2.0.0
 
 First release. AdventForever tracks each player's **effort** (raids, guild bank, honor and
 dungeons with guildies) and shows it to officers when they hand out loot. The addon never

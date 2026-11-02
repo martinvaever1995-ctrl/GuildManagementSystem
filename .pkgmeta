@@ -1,4 +1,4 @@
-package-as: AdventForever
+package-as: GuildManagementSystem
 
 # Kept in the repository, left out of the download.
 ignore:

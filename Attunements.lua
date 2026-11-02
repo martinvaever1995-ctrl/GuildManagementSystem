@@ -95,7 +95,7 @@ end
 -- Checks every attunement; tells the guild if anything changed (or force).
 local function Check(force)
     checkTimer = nil
-    if not AF.playerName then return end
+    if not AF.playerName or not AF.Config:Feature("attune") then return end
     local d = {}
     for _, a in ipairs(Attunements:List()) do d[a.key] = Attunements.IsDone(a) end
     local mine = Store()[AF.playerName]
@@ -198,7 +198,7 @@ end)
 function Attunements:Enable()
     C_Timer.After(20, function() Check(true) end)
     C_Timer.After(30, function()
-        if IsInGuild() then AF.Comm:Send("ATTQ", Count(), "GUILD") end
+        if IsInGuild() and AF.Config:Feature("attune") then AF.Comm:Send("ATTQ", Count(), "GUILD") end
     end)
 end
 

@@ -3,12 +3,12 @@
 --  the audit log and slash commands. Every other module hangs off AF.
 -------------------------------------------------------------------------------
 local ADDON_NAME, AF = ...
-_G.AdventForever = AF
+_G.GuildManagementSystem = AF
 
-AF.VERSION = 20005          -- major * 10000 + minor * 100 + patch; bump with ## Version
-AF.VERSION_STRING = "2.0.5"
-AF.PREFIX = "AdvForever"    -- addon message prefix (max 16 chars)
-AF.PREFIX_BULK = "AdvForeverBulk"   -- the slow lane for large data (Comm.lua)
+AF.VERSION = 30000          -- major * 10000 + minor * 100 + patch; bump with ## Version
+AF.VERSION_STRING = "3.0.0"
+AF.PREFIX = "GuildMgmtSys"  -- addon message prefix (max 16 chars)
+AF.PREFIX_BULK = "GuildMgmtSysBk"   -- the slow lane for large data (Comm.lua)
 
 -------------------------------------------------------------------------------
 --  Events and internal messages
@@ -49,7 +49,7 @@ end
 --  Output
 -------------------------------------------------------------------------------
 function AF:Printf(fmt, ...)
-    DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99AdventForever|r: " .. fmt:format(...))
+    DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99GMS|r: " .. fmt:format(...))
 end
 
 function AF:Print(text) self:Printf("%s", tostring(text)) end
@@ -246,17 +246,124 @@ function AF:NewModule(name)
     return module
 end
 
+-------------------------------------------------------------------------------
+--  Saved data. Every guild gets its own compartment, so characters in two guilds
+--  never mix their guilds' ledgers, rules or lists:
+--    GuildManagementSystemDB = {
+--        account = { prefs, ui, characters, main, ... },   -- the whole WoW account
+--        guilds = { ["Guild-Realm"] = { events, config, snapshot, ... } },
+--        chars = { ["Name-Realm"] = "Guild-Realm" },        -- each character's guild, last seen
+--    }
+--  AF.db reads and writes the account keys in `account` and everything else in
+--  the current guild's compartment. The guild is only certain a moment after
+--  login; a character's first login (or a guild change) may need one reload.
+-------------------------------------------------------------------------------
+local ACCOUNT_KEYS = { prefs = true, ui = true, characters = true, main = true, mainChosenAt = true, linkAcked = true }
+local PENDING, NO_GUILD = "?", "-"
+local saved, guildKey
+
+local function CharKey()
+    return (UnitName("player") or "?") .. "-" .. (GetRealmName() or "?")
+end
+
+local function Bucket(key)
+    saved.guilds[key] = saved.guilds[key] or {}
+    return saved.guilds[key]
+end
+
+local function UseGuild(key)
+    guildKey = key
+    local account, bucket = saved.account, Bucket(key)
+    AF.db = setmetatable({}, {
+        __index = function(_, k) return (ACCOUNT_KEYS[k] and account or bucket)[k] end,
+        __newindex = function(_, k, v) (ACCOUNT_KEYS[k] and account or bucket)[k] = v end,
+    })
+    bucket.log, bucket.breakdown, bucket.won, bucket.bossAwards, bucket.lastDecay = nil, nil, nil, nil, nil  -- v1 leftovers
+    bucket.recruits = nil           -- recruiting was removed
+    bucket.bench = bucket.bench or {}
+end
+
+-- The guild the game says we're in now: "Guild-Realm", NO_GUILD, or nil while unknown.
+local function CurrentGuildKey()
+    if not IsInGuild() then return nil end
+    local guild = GetGuildInfo("player")
+    if not guild or guild == "" then return nil end
+    return guild .. "-" .. (GetRealmName() or "?")
+end
+
+-- AdventForever's saved data (its last version only keeps it around for us),
+-- moved into this guild's compartment once.
+local function MigrateAdventForever(key)
+    local old = _G.AdventForeverDB
+    if saved.migrated or type(old) ~= "table" or next(old) == nil then return false end
+    saved.migrated = true
+    local bucket = Bucket(key)
+    if next(bucket) ~= nil and bucket.events then return false end     -- this guild already has data
+    for k, v in pairs(old) do
+        if ACCOUNT_KEYS[k] then
+            if saved.account[k] == nil then saved.account[k] = v end
+        else
+            bucket[k] = v
+        end
+    end
+    -- AdventForever had guild loot on and no setup: keep it that way.
+    if type(bucket.config) == "table" then
+        bucket.config.features = { guildLoot = true }
+        bucket.config.setupDone = true
+    end
+    return true
+end
+
+StaticPopupDialogs.GMS_RELOAD = {
+    text = "Guild Management System has loaded the data for %s.\nReload your interface to use it.",
+    button1 = RELOADUI or "Reload",
+    button2 = LATER or "Later",
+    OnAccept = function() ReloadUI() end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+-- Once the game knows our guild: switch compartments if it changed.
+local guildChecks = 0
+local function CheckGuild()
+    local key = CurrentGuildKey()
+    if not key then
+        guildChecks = guildChecks + 1
+        if IsInGuild() and guildChecks < 30 then return C_Timer.After(1, CheckGuild) end
+        if IsInGuild() then return end
+        key = NO_GUILD
+    end
+    saved.chars[CharKey()] = key
+    local migrated = key ~= NO_GUILD and MigrateAdventForever(key)
+    if key == guildKey and not migrated then return end
+    if guildKey == PENDING and not migrated and not saved.guilds[key] then
+        -- First time for this guild: what we gathered so far simply becomes its data.
+        saved.guilds[key] = saved.guilds[PENDING]
+        saved.guilds[PENDING] = nil
+        guildKey = key
+        return
+    end
+    if migrated then AF:Print("Your AdventForever data was moved into Guild Management System.") end
+    StaticPopup_Show("GMS_RELOAD", key == NO_GUILD and "no guild" or (GetGuildInfo("player") or key))
+end
+
 AF:RegisterEvent("ADDON_LOADED", function(_, name)
     if name ~= ADDON_NAME then return end
-    AdventForeverDB = AdventForeverDB or {}
-    local db = AdventForeverDB
-    db.log, db.breakdown, db.won, db.bossAwards, db.lastDecay = nil, nil, nil, nil, nil   -- replaced by the ledger
-    db.bench = db.bench or {}
-    AF.db = db
+    GuildManagementSystemDB = GuildManagementSystemDB or {}
+    saved = GuildManagementSystemDB
+    saved.account = saved.account or {}
+    saved.guilds = saved.guilds or {}
+    saved.chars = saved.chars or {}
+    saved.guilds[PENDING] = nil      -- never carried over from a session that didn't finish
+    UseGuild(saved.chars[CharKey()] or PENDING)
     for _, module in ipairs(AF.modules) do
         if module.Init then SafeCall(module.Init, module) end
     end
 end)
+
+AF:RegisterEvent("PLAYER_LOGIN", function() C_Timer.After(2, CheckGuild) end)
 
 AF:RegisterEvent("PLAYER_LOGIN", function()
     AF.playerName = AF:UnitFullName("player")
@@ -286,9 +393,6 @@ function AF:Debug()
     local guildRaid, canRoll, rollLines = self.GuildLoot.Status()
     self:Printf("Guild loot: guild raid now: %s | can roll by addon: %s | roll lines understood: %d of 3",
         guildRaid and "yes" or "no", canRoll and "yes" or "NO", rollLines)
-    local recruitRole, channelState, canJoin, canInvite = self.Recruit.Status()
-    self:Printf("Recruiting: role %s | channel %s | can join channels: %s | guild invite function: %s",
-        recruitRole, channelState, canJoin and "yes" or "NO", canInvite and "yes" or "NO")
     local h = self.Honor.ApiReport()
     self:Printf("Honor: this week %d (from %s) | weekly stats: %s | honor currency: %s | inspect honor: %s (event: %s)",
         h.honor, h.source, h.weeklyStats and "yes" or "no", tostring(h.currency),
@@ -311,32 +415,32 @@ end
 --  Slash commands
 -------------------------------------------------------------------------------
 local HELP = {
-    "/af - main window (Effort, Me, Rules, Loot, Log, Bank and Options tabs)",
-    "/af history - who won what, by item or by player (Loot tab, officers)",
-    "/af trades - items you have to trade to a winner, and items coming to you",
-    "/af nudge - show the login summary again (turn it off in the Me tab)",
-    "/af recruit - guildless players who run AdventForever, with an invite button (ranks that can invite)",
-    "/af main - make this character your main (your other characters on this account become its alts)",
-    "/af link <alt> <main>, /af unlink <name> - link characters by hand, e.g. across accounts (officers)",
-    "/af me - your own effort, split by category, and what's left this week",
-    "/af rules - how effort is scored, with the guild's current numbers",
-    "/af loot - loot window (master looter / raid leader)",
-    "/af item <shift-click item> - start a loot session for an item by hand",
-    "/af adjust <name> <raid|bank|honor> <+/-points> [reason] - correct this week's points in a category (officers)",
-    "/af log - ledger events (Log tab, officers)",
-    "/af bank - guild bank rules and the wanted list (Bank tab)",
-    "/af invite - raid invites: everyone online at chosen ranks / minimum effort, and guildies who whisper a keyword",
-    "/af minimap - show or hide the minimap button (left-click opens, right-click for a menu, drag to move)",
-    "/af attune - who in the guild is attuned to which raid (officers add or remove attunements there)",
-    "/af crafters [item] - who in the guild can craft something; without a search, everyone's professions",
-    "/af wish [shift-click item] - your wishlist (up to 10 items, ranked; only officers see it), or add an item to it",
-    "/af bench add|remove <name>, /af bench list|clear - players on your bench get credit for guild kills you record (officers)",
-    "/af kill <boss> - record a guild kill for your group by hand, if the game hid it (officers)",
-    "/af final - mark (or unmark) the dungeon boss you just killed as the dungeon's final boss (officers)",
-    "/af test [shift-click item] - try the loot popup and loot window alone (nothing is sent)",
-    "/af versions (or /af check) - who in your group has the addon and which version, with durability, flasks / elixirs and range",
-    "/af options - effort rules (officers edit, everyone can view); /af config prints them",
-    "/af export, /af import - copy the ledger out as text / merge a copy back in (officers)",
+    "/gms - main window (Effort, Me, Rules, Loot, Log, Bank and Options tabs)",
+    "/gms history - who won what, by item or by player (Loot tab, officers)",
+    "/gms trades - items you have to trade to a winner, and items coming to you",
+    "/gms nudge - show the login summary again (turn it off in the Me tab)",
+    "/gms main - make this character your main (your other characters on this account become its alts)",
+    "/gms link <alt> <main>, /gms unlink <name> - link characters by hand, e.g. across accounts (officers)",
+    "/gms me - your own effort, split by category, and what's left this week",
+    "/gms rules - how effort is scored, with the guild's current numbers",
+    "/gms loot - loot window (master looter / raid leader)",
+    "/gms item <shift-click item> - start a loot session for an item by hand",
+    "/gms adjust <name> <raid|bank|honor> <+/-points> [reason] - correct this week's points in a category (officers)",
+    "/gms log - ledger events (Log tab, officers)",
+    "/gms bank - guild bank rules and the wanted list (Bank tab)",
+    "/gms setup - guild setup: officer ranks, what counts as effort, which features are on (officers edit)",
+    "/gms invite - raid invites: everyone online at chosen ranks / minimum effort, and guildies who whisper a keyword",
+    "/gms minimap - show or hide the minimap button (left-click opens, right-click for a menu, drag to move)",
+    "/gms attune - who in the guild is attuned to which raid (officers add or remove attunements there)",
+    "/gms crafters [item] - who in the guild can craft something; without a search, everyone's professions",
+    "/gms wish [shift-click item] - your wishlist (up to 10 items, ranked; only officers see it), or add an item to it",
+    "/gms bench add|remove <name>, /gms bench list|clear - players on your bench get credit for guild kills you record (officers)",
+    "/gms kill <boss> - record a guild kill for your group by hand, if the game hid it (officers)",
+    "/gms final - mark (or unmark) the dungeon boss you just killed as the dungeon's final boss (officers)",
+    "/gms test [shift-click item] - try the loot popup and loot window alone (nothing is sent)",
+    "/gms versions (or /gms check) - who in your group has the addon and which version, with durability, flasks / elixirs and range",
+    "/gms options - effort rules (officers edit, everyone can view); /gms config prints them",
+    "/gms export, /gms import - copy the ledger out as text / merge a copy back in (officers)",
 }
 
 -- Finds a guild member's full name from what the user typed ("bob" -> "Bob-Realm").
@@ -361,7 +465,7 @@ end
 
 local function NeedOfficer()
     if AF.Ledger:CanRecord() then return true end
-    AF:Print("Only officers can do that (ranks set in /af options).")
+    AF:Print("Only officers can do that (ranks set in /gms options).")
     return false
 end
 
@@ -376,7 +480,7 @@ commands.loot = function() AF.UI:ToggleLootWindow() end
 commands.item = function(args)
     local links = {}
     for link in args:gmatch("|c[^|]*|Hitem:.-|h|r") do table.insert(links, link) end
-    if #links == 0 then return AF:Print("Usage: /af item <shift-click one or more items>") end
+    if #links == 0 then return AF:Print("Usage: /gms item <shift-click one or more items>") end
     AF.Loot:StartSessions(links)
 end
 
@@ -385,7 +489,7 @@ commands.adjust = function(args)
     local who, category, points, reason = args:match("^(%S+)%s+(%a+)%s+([%+%-]?%d+)%s*(.*)$")
     category = category and category:lower()
     if not who or not AF.Standings.CATEGORY_TEXT[category] then
-        return AF:Print("Usage: /af adjust <name> <raid|bank|honor> <+/- points this week> [reason]  (0 removes the correction)")
+        return AF:Print("Usage: /gms adjust <name> <raid|bank|honor> <+/- points this week> [reason]  (0 removes the correction)")
     end
     local name, err = AF:ResolveName(who)
     if not name then return AF:Print(err) end
@@ -425,7 +529,6 @@ commands.me = function() AF.UI:ShowMe() end
 commands.history = function() AF.UI:ShowLootHistory() end
 
 commands.main = function() AF.Alts:SetMain() end
-commands.recruit = function() AF.UI:ShowRecruit() end
 commands.trades = function() AF.UI:ToggleTrades() end
 commands.nudge = function()
     if not AF.UI:ShowNudge() then AF:Print("No numbers yet: wait until an officer is online (or the ledger has synced).") end
@@ -433,7 +536,7 @@ end
 
 commands.link = function(args)
     local altInput, mainInput = args:match("^(%S+)%s+(%S+)$")
-    if not altInput then return AF:Print("Usage: /af link <alt> <main>") end
+    if not altInput then return AF:Print("Usage: /gms link <alt> <main>") end
     local alt, err = AF:ResolveName(altInput)
     if not alt then return AF:Print(err) end
     local main, err2 = AF:ResolveName(mainInput)
@@ -449,6 +552,7 @@ end
 commands.rules = function() AF.UI:ShowRules() end
 commands.attune = function() AF.UI:ShowAttunements() end
 commands.invite = function() AF.UI:ShowInvites() end
+commands.setup = function() AF.UI:ShowSetup() end
 commands.minimap = function() AF.UI:ToggleMinimap() end
 commands.crafters = function(args)
     AF.UI:ShowCrafters()
@@ -490,9 +594,9 @@ commands.import = function()
         end)
 end
 
-SLASH_ADVENTFOREVER1 = "/af"
-SLASH_ADVENTFOREVER2 = "/adventforever"
-SlashCmdList.ADVENTFOREVER = function(input)
+SLASH_GMS1 = "/gms"
+SLASH_GMS2 = "/guildmanagement"
+SlashCmdList.GMS = function(input)
     local cmd, args = (input or ""):match("^%s*(%S*)%s*(.-)%s*$")
     cmd = cmd:lower()
     if cmd == "" then return AF.UI:ToggleStandings() end
