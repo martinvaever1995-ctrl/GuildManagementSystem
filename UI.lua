@@ -2656,6 +2656,7 @@ local function CreateCard(name, title, shown, onClick)
     card:SetSize(380, 40)
     card:SetFrameStrata("HIGH")
     Theme.Backdrop(card, C.bg)
+    Theme.Framed(card)
     local stripe = card:CreateTexture(nil, "ARTWORK")
     stripe:SetPoint("TOPLEFT", 1, -1)
     stripe:SetPoint("BOTTOMLEFT", 1, 1)
@@ -2784,6 +2785,7 @@ local function CreateMinimapMenu()
     minimapMenu:SetFrameStrata("DIALOG")
     minimapMenu:SetClampedToScreen(true)
     Theme.Backdrop(minimapMenu, C.bg)
+    Theme.Framed(minimapMenu)
     minimapMenu.items = {}
     for i, entry in ipairs(MENU) do
         local item
@@ -3052,6 +3054,21 @@ local function BuildSettings(panel)
         AF.db.prefs.nudge = on
     end)
     panel.nudge:SetPoint("TOPLEFT", 20, y)
+    y = y - 40
+
+    Heading("Look")
+    panel.styles = {}
+    x = 18
+    for _, def in ipairs({ { "modern", "Modern" }, { "classic", "Classic (Blizzard)" } }) do
+        local b = Theme.Button(panel, def[2], def[1] == "modern" and 100 or 150, 24)
+        b:SetPoint("TOPLEFT", x, y)
+        b:SetScript("OnClick", function() UI:SetStyle(def[1]) end)
+        panel.styles[def[1]] = b
+        x = x + b:GetWidth() + 8
+    end
+    local styleNote = Theme.Text(panel, 11, C.dim)
+    styleNote:SetPoint("TOPLEFT", 18, y - 32)
+    styleNote:SetText("Modern: the flat GMS look. Classic: the game's own frames, buttons and font. Changing it reloads your interface.")
 end
 
 -- Keeps the panel in step with what may have changed elsewhere.
@@ -3062,6 +3079,47 @@ local function RefreshSettings(panel)
     for check, on in pairs({ [panel.minimap] = not MinimapPrefs().hidden, [panel.nudge] = UI.NudgeEnabled() }) do
         check.checked = on
         check.mark:SetShown(on)
+    end
+    local current = UI.Style()
+    for style, b in pairs(panel.styles) do
+        if style == current then
+            b:SetBackdropBorderColor(Theme.Accent())
+        else
+            b:SetBackdropBorderColor(unpack(C.buttonBorder))
+        end
+    end
+end
+
+-------------------------------------------------------------------------------
+--  Modern or Classic look (per account; takes effect after a reload)
+-------------------------------------------------------------------------------
+function UI.Style()
+    local prefs = AF.db.prefs
+    return prefs and prefs.style == "classic" and "classic" or "modern"
+end
+
+StaticPopupDialogs.GMS_STYLE_RELOAD = {
+    text = "Guild Management System will use the %s look after a reload.",
+    button1 = RELOADUI or "Reload",
+    button2 = LATER or "Later",
+    OnAccept = function() ReloadUI() end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+function UI:SetStyle(style)
+    if style ~= "classic" and style ~= "modern" then
+        return AF:Printf("Look: %s now. /gms style modern or /gms style classic changes it.", UI.Style())
+    end
+    AF.db.prefs = AF.db.prefs or {}
+    local changed = UI.Style() ~= style
+    AF.db.prefs.style = style
+    if changed then
+        StaticPopup_Show("GMS_STYLE_RELOAD", style == "classic" and "Classic (Blizzard)" or "Modern")
+    else
+        AF:Printf("You're already using the %s look.", style)
     end
 end
 

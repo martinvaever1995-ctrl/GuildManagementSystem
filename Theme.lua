@@ -7,6 +7,13 @@
 --  skinning API takes over the styling and supplies the accent color, so we
 --  match the user's theme and follow live accent changes. Without it, the
 --  built-in palette below is used.
+--
+--  The Classic style (AF.db.prefs.style = "classic", picked in the settings,
+--  applied at login) swaps the palette for Blizzard's gold-and-grey and the
+--  game's own font, frames windows and cards with Blizzard's dialog and tooltip
+--  borders (drawn around them, so no layout moves), and uses the game's own
+--  buttons, checkboxes, input boxes and status bar texture. EllesmereUI is
+--  ignored then.
 -------------------------------------------------------------------------------
 local _, AF = ...
 local Theme = AF:NewModule("Theme")
@@ -16,6 +23,11 @@ local WHITE = "Interface\\Buttons\\WHITE8x8"
 -- surfaces use it as it is (BRAND) and accents a brighter shade of the same hue.
 local BRAND = { 2 / 255, 53 / 255, 48 / 255 }
 local DEFAULT_ACCENT = { 17 / 255, 212 / 255, 193 / 255 }
+local STATUSBAR = "Interface\TargetingFrame\UI-StatusBar"
+
+-- "classic" or "modern", fixed for the session (switching needs a reload).
+local classic = false
+function Theme.IsClassic() return classic end
 
 local MEDIA = "Interface\\AddOns\\GuildManagementSystem\\Media\\"
 Theme.FONT = MEDIA .. "Inter-Regular.ttf"
@@ -52,6 +64,35 @@ Theme.ROLE = {
     pass = { { 0.545, 0.553, 0.573 }, { 0.149, 0.157, 0.173, 1 } },
 }
 
+-- Blizzard's palette for the Classic style: gold headings and accents, grey text,
+-- translucent black panels inside the game's own borders.
+local CLASSIC = {
+    bg = { 0.04, 0.04, 0.04, 0.92 },
+    sidebar = { 0, 0, 0, 0.35 },
+    titleBar = { 0, 0, 0, 0.45 },
+    card = { 0.07, 0.07, 0.07, 0.8 },
+    line = { 0.45, 0.37, 0.16, 0.6 },
+    track = { 0.12, 0.12, 0.12, 1 },
+    input = { 0, 0, 0, 0.5 },
+    text = { 0.9, 0.9, 0.9 },
+    bright = { 1, 0.82, 0 },
+    dim = { 0.72, 0.72, 0.72 },
+    faint = { 0.62, 0.53, 0.3 },
+    stripe = { 1, 1, 1, 0.03 },
+}
+
+function Theme:Init()
+    local prefs = AF.db.prefs
+    classic = prefs ~= nil and prefs.style == "classic"
+    if not classic then return end
+    for key, value in pairs(CLASSIC) do
+        -- In place: other files keep a reference to C.
+        for i = 1, 4 do C[key][i] = value[i] end
+    end
+    Theme.FONT = STANDARD_TEXT_FONT
+    Theme.FONT_BOLD = STANDARD_TEXT_FONT
+end
+
 -------------------------------------------------------------------------------
 --  EllesmereUI bridge
 -------------------------------------------------------------------------------
@@ -60,6 +101,7 @@ local skinned = {}      -- every primitive we asked for, replayed when the API a
 local accented = {}     -- regions painted in the accent color
 
 function Theme.Accent()
+    if classic then return 1, 0.82, 0 end
     if skin and skin.GetAccentColor then return skin.GetAccentColor() end
     return DEFAULT_ACCENT[1], DEFAULT_ACCENT[2], DEFAULT_ACCENT[3]
 end
@@ -67,6 +109,9 @@ end
 local function Paint(a)
     local r, g, b = Theme.Accent()
     if a.kind == "texture" then a.region:SetColorTexture(r, g, b, a.alpha)
+    elseif a.kind == "gradient" and classic then
+        a.region:SetTexture(STATUSBAR)
+        a.region:SetVertexColor(r, g, b, a.alpha)
     elseif a.kind == "gradient" then
         -- The accent, a little lighter at the top and deeper at the bottom.
         a.region:SetTexture(WHITE)
@@ -104,6 +149,7 @@ end
 -- Asks EllesmereUI to skin a frame (now, or once its API arrives).
 -- after() runs once the skin is applied, to hide our own art it replaces.
 local function Skin(method, frame, args, after)
+    if classic then return end
     local entry = { method = method, frame = frame, args = args or {}, after = after }
     table.insert(skinned, entry)
     if skin then Apply(entry) end
@@ -111,6 +157,7 @@ end
 
 if EllesmereUI and EllesmereUI.RegisterSkin then
     EllesmereUI.RegisterSkin("GuildManagementSystem", function(S)
+        if classic then return end
         skin = S
         for _, entry in ipairs(skinned) do Apply(entry) end
         if S.OnLooksChanged then S.OnLooksChanged(RepaintAccents) end
@@ -127,6 +174,27 @@ function Theme.Backdrop(frame, bg, border)
     frame:SetBackdropBorderColor(unpack(border or C.border))
 end
 
+-- Classic: a Blizzard border drawn just around a frame (outset), above its
+-- content, so nothing inside has to move.
+local DIALOG_EDGE = { edgeFile = "Interface\DialogFrame\UI-DialogBox-Border", edgeSize = 24 }
+local TOOLTIP_EDGE = { edgeFile = "Interface\Tooltips\UI-Tooltip-Border", edgeSize = 12 }
+
+local function ClassicBorder(frame, edge, outset)
+    local border = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+    border:SetPoint("TOPLEFT", -outset, outset)
+    border:SetPoint("BOTTOMRIGHT", outset, -outset)
+    border:SetFrameLevel(frame:GetFrameLevel() + 30)
+    border:SetBackdrop(edge)
+    border:EnableMouse(false)
+    return border
+end
+
+-- A Blizzard tooltip border round a frame with its own flat background (cards,
+-- menus); nothing in the Modern style.
+function Theme.Framed(frame)
+    if classic then ClassicBorder(frame, TOOLTIP_EDGE, 3) end
+end
+
 -- Sets a font, falling back to the game's if ours can't load.
 local function SetFont(region, path, size)
     region:SetFont(path, size, "")
@@ -138,7 +206,9 @@ Theme.SetFont = SetFont
 -- Text in Inter (SemiBold with bold = true). EllesmereUI users get their own font.
 function Theme.Text(parent, size, color, layer, bold)
     local fs = parent:CreateFontString(nil, layer or "OVERLAY")
-    SetFont(fs, bold and Theme.FONT_BOLD or Theme.FONT, size or 12)
+    size = size or 12
+    if classic then size = size - 1 end     -- the game's font runs wider than Inter
+    SetFont(fs, bold and Theme.FONT_BOLD or Theme.FONT, size)
     fs:SetTextColor(unpack(color or C.text))
     fs:SetShadowOffset(1, -1)
     fs:SetShadowColor(0, 0, 0, 0.6)
@@ -166,8 +236,9 @@ end
 function Theme.Card(parent, width, height)
     local f = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     if width then f:SetSize(width, height) end
-    Theme.Backdrop(f, C.card)
+    Theme.Backdrop(f, C.card, classic and { 0, 0, 0, 0 } or nil)
     f:SetFrameLevel(math.max(0, parent:GetFrameLevel()))
+    if classic then ClassicBorder(f, TOOLTIP_EDGE, 3) end
     Skin("Panel", f)
     return f
 end
@@ -239,6 +310,19 @@ function Theme.Window(name, title, width, height, defaultY)
     f.title:SetPoint("LEFT", 10, 0)
     f.title:SetText(title)
 
+    if classic then
+        ClassicBorder(f, DIALOG_EDGE, 9)
+        local close = CreateFrame("Button", nil, bar, "UIPanelCloseButton")
+        close:SetSize(26, 26)
+        close:SetPoint("RIGHT", 2, 0)
+        close:SetScript("OnClick", function() f:Hide() end)
+        f.close = close
+        table.insert(UISpecialFrames, name)
+        RestorePosition(f, defaultY)
+        f:Hide()
+        return f
+    end
+
     local close = CreateFrame("Button", nil, bar)
     close:SetSize(24, 24)
     close:SetPoint("RIGHT")
@@ -262,7 +346,22 @@ end
 --  Controls
 -------------------------------------------------------------------------------
 -- Flat button. role ("ms", "os", "pass") colors the label and border.
+-- The game's own button (Classic). Where we'd color a selected button's border,
+-- it lights up instead.
+local function ClassicButton(parent, text, width, height, role)
+    local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    b:SetSize(width or 100, height or 22)
+    b:SetText(text)
+    b.label = b:GetFontString()
+    if role then b.label:SetTextColor(unpack(Theme.ROLE[role][1])) end
+    function b:SetBackdropBorderColor(r)
+        if r and r > 0.5 then self:LockHighlight() else self:UnlockHighlight() end
+    end
+    return b
+end
+
 function Theme.Button(parent, text, width, height, role)
+    if classic then return ClassicButton(parent, text, width, height, role) end
     local b = CreateFrame("Button", nil, parent, "BackdropTemplate")
     b:SetSize(width or 100, height or 22)
     local textColor, border = { 0.9, 0.9, 0.9 }, C.buttonBorder
@@ -284,7 +383,27 @@ function Theme.Button(parent, text, width, height, role)
     return b
 end
 
+-- The game's own checkbox (Classic), with the same fields as ours.
+local function ClassicCheck(parent, label, checked, onChange)
+    local c = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
+    c:SetSize(22, 22)
+    c.mark = { SetShown = function(_, on) c:SetChecked(on) end }
+    c.label = Theme.Text(parent, 11, C.dim)
+    c.label:SetPoint("LEFT", c, "RIGHT", 2, 0)
+    c.label:SetText(label)
+    c:SetHitRectInsets(0, -(c.label:GetStringWidth() + 6), 0, 0)
+    c.checked = checked and true or false
+    c:SetChecked(c.checked)
+    c:SetScript("OnClick", function()
+        c.checked = not c.checked
+        c:SetChecked(c.checked)
+        onChange(c.checked)
+    end)
+    return c
+end
+
 function Theme.Check(parent, label, checked, onChange)
+    if classic then return ClassicCheck(parent, label, checked, onChange) end
     local c = CreateFrame("Button", nil, parent, "BackdropTemplate")
     c:SetSize(14, 14)
     Theme.Backdrop(c, C.input, C.buttonBorder)
@@ -307,6 +426,16 @@ function Theme.Check(parent, label, checked, onChange)
 end
 
 function Theme.EditBox(parent, width)
+    if classic then
+        -- The game's input box; its frame reaches a few pixels left of the text.
+        local e = CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
+        e:SetSize(width - 6, 22)
+        e:SetAutoFocus(false)
+        e:SetTextInsets(0, 4, 0, 0)
+        e:SetScript("OnEscapePressed", e.ClearFocus)
+        e:SetScript("OnEnterPressed", e.ClearFocus)
+        return e
+    end
     local e = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
     e:SetSize(width, 22)
     Theme.Backdrop(e, C.input, C.buttonBorder)
@@ -411,7 +540,13 @@ function Theme.Sidebar(window, items, width, onSelect, showOfficer)
         b:SetSize(width - 1, 28)
         b.bg = b:CreateTexture(nil, "BACKGROUND")
         b.bg:SetAllPoints()
-        b.bg:SetColorTexture(unpack(C.brand))
+        if classic then
+            b.bg:SetTexture("Interface\QuestFrame\UI-QuestTitleHighlight")
+            b.bg:SetBlendMode("ADD")
+            b.bg:SetVertexColor(1, 0.82, 0, 0.55)
+        else
+            b.bg:SetColorTexture(unpack(C.brand))
+        end
         b.marker = b:CreateTexture(nil, "ARTWORK")
         b.marker:SetPoint("TOPLEFT", 0, -4)
         b.marker:SetPoint("BOTTOMLEFT", 0, 4)

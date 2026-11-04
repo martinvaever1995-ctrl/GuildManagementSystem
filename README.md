@@ -154,7 +154,9 @@ Officers are the guild ranks set in guild setup (default 0–1; only the GM chan
 No officer or public notes are used.
 
 ## Look
-A flat dark theme in the GMS brand green. With EllesmereUI installed, its third-party skinning
+Two looks, picked per player in the settings or with `/gms style`: **Modern**, a flat dark
+theme in the GMS brand green, and **Classic**, the game's own frames, buttons and font with gold
+headings. In Modern, with EllesmereUI installed, its third-party skinning
 styles the addon instead, using your EllesmereUI theme, font and accent color. You can turn
 that off per addon in EllesmereUI's options.
 
@@ -181,6 +183,7 @@ that off per addon in EllesmereUI's options.
 | `/gms minimap` | Show or hide the minimap button |
 | `/gms settings` | This addon's page in the game's settings |
 | `/gms welcome` | The short guide to what GMS does |
+| `/gms style modern\|classic` | The flat GMS look or the game's own Blizzard style |
 | `/gms setup` | Guild setup: officer ranks, effort sources, features (officers edit) |
 | `/gms options` / `/gms config` | Effort rules (officers edit, everyone views) / print them |
 | `/gms history` | Officers: who won what in the last 4 or 8 weeks, by item or by player |

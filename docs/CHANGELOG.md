@@ -1,5 +1,15 @@
 # Guild Management System
 
+## v3.1.0
+
+### Classic look
+- Pick **Modern** (the flat GMS look) or **Classic (Blizzard)** in the settings (Options →
+  AddOns → Guild Management System) or with `/gms style classic` / `/gms style modern`.
+- Classic uses the game's own frames, buttons, checkboxes, input boxes, status bars and font,
+  with gold headings, like Blizzard's own windows. Every window and feature works the same.
+- It's a personal setting: everyone in the guild can choose their own. Changing it reloads
+  your interface. With EllesmereUI installed, Modern keeps following EllesmereUI.
+
 ## v3.0.1
 
 ### New

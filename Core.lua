@@ -5,8 +5,8 @@
 local ADDON_NAME, AF = ...
 _G.GuildManagementSystem = AF
 
-AF.VERSION = 30001          -- major * 10000 + minor * 100 + patch; bump with ## Version
-AF.VERSION_STRING = "3.0.1"
+AF.VERSION = 30100          -- major * 10000 + minor * 100 + patch; bump with ## Version
+AF.VERSION_STRING = "3.1.0"
 AF.PREFIX = "GuildMgmtSys"  -- addon message prefix (max 16 chars)
 AF.PREFIX_BULK = "GuildMgmtSysBk"   -- the slow lane for large data (Comm.lua)
 
@@ -431,6 +431,7 @@ local HELP = {
     "/gms setup - guild setup: officer ranks, what counts as effort, which features are on (officers edit)",
     "/gms invite - raid invites: everyone online at chosen ranks / minimum effort, and guildies who whisper a keyword",
     "/gms settings - this addon's page in the game's settings (minimap button, login summary)",
+    "/gms style modern|classic - the flat GMS look or the game's own Blizzard style (reloads)",
     "/gms welcome - the short guide to what GMS does",
     "/gms minimap - show or hide the minimap button (left-click opens, right-click for a menu, drag to move)",
     "/gms attune - who in the guild is attuned to which raid (officers add or remove attunements there)",
@@ -556,6 +557,7 @@ commands.attune = function() AF.UI:ShowAttunements() end
 commands.invite = function() AF.UI:ShowInvites() end
 commands.setup = function() AF.UI:ShowSetup() end
 commands.settings = function() AF.UI:OpenSettings() end
+commands.style = function(args) AF.UI:SetStyle(args:lower()) end
 commands.welcome = function() AF.UI:ShowWelcome() end
 commands.minimap = function() AF.UI:ToggleMinimap() end
 commands.crafters = function(args)
