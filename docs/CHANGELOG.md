@@ -1,5 +1,19 @@
 # Guild Management System
 
+## v3.0.1
+
+### New
+- **Welcome guide:** the first time you log in with GMS, a short guide explains effort, the loot
+  popup and the tabs your guild uses. Open it again with `/gms welcome`.
+- **Settings page** in the game's own settings (Options → AddOns → Guild Management System, or
+  `/gms settings`): open GMS, guild setup and effort rules (officers), the minimap button and the
+  login summary.
+
+### Fixes
+- `/gms help` now lists `dungeon` for `/gms adjust` (it already worked).
+- The download no longer includes the changelog, and GitHub's "Source code" downloads only
+  contain the addon.
+
 ## v3.0.0
 
 AdventForever is now **Guild Management System (GMS)**, and any guild can use it.

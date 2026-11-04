@@ -179,6 +179,8 @@ that off per addon in EllesmereUI's options.
 | `/gms versions` (or `/gms check`) | Who in your group has the addon and which version, with durability, flasks / elixirs and range |
 | `/gms invite` | Raid invites by rank and minimum effort, and invites by whisper keyword |
 | `/gms minimap` | Show or hide the minimap button |
+| `/gms settings` | This addon's page in the game's settings |
+| `/gms welcome` | The short guide to what GMS does |
 | `/gms setup` | Guild setup: officer ranks, effort sources, features (officers edit) |
 | `/gms options` / `/gms config` | Effort rules (officers edit, everyone views) / print them |
 | `/gms history` | Officers: who won what in the last 4 or 8 weeks, by item or by player |

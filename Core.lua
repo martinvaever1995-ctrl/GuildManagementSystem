@@ -5,8 +5,8 @@
 local ADDON_NAME, AF = ...
 _G.GuildManagementSystem = AF
 
-AF.VERSION = 30000          -- major * 10000 + minor * 100 + patch; bump with ## Version
-AF.VERSION_STRING = "3.0.0"
+AF.VERSION = 30001          -- major * 10000 + minor * 100 + patch; bump with ## Version
+AF.VERSION_STRING = "3.0.1"
 AF.PREFIX = "GuildMgmtSys"  -- addon message prefix (max 16 chars)
 AF.PREFIX_BULK = "GuildMgmtSysBk"   -- the slow lane for large data (Comm.lua)
 
@@ -425,11 +425,13 @@ local HELP = {
     "/gms rules - how effort is scored, with the guild's current numbers",
     "/gms loot - loot window (master looter / raid leader)",
     "/gms item <shift-click item> - start a loot session for an item by hand",
-    "/gms adjust <name> <raid|bank|honor> <+/-points> [reason] - correct this week's points in a category (officers)",
+    "/gms adjust <name> <raid|bank|honor|dungeon> <+/-points> [reason] - correct this week's points in a category (officers)",
     "/gms log - ledger events (Log tab, officers)",
     "/gms bank - guild bank rules and the wanted list (Bank tab)",
     "/gms setup - guild setup: officer ranks, what counts as effort, which features are on (officers edit)",
     "/gms invite - raid invites: everyone online at chosen ranks / minimum effort, and guildies who whisper a keyword",
+    "/gms settings - this addon's page in the game's settings (minimap button, login summary)",
+    "/gms welcome - the short guide to what GMS does",
     "/gms minimap - show or hide the minimap button (left-click opens, right-click for a menu, drag to move)",
     "/gms attune - who in the guild is attuned to which raid (officers add or remove attunements there)",
     "/gms crafters [item] - who in the guild can craft something; without a search, everyone's professions",
@@ -489,7 +491,7 @@ commands.adjust = function(args)
     local who, category, points, reason = args:match("^(%S+)%s+(%a+)%s+([%+%-]?%d+)%s*(.*)$")
     category = category and category:lower()
     if not who or not AF.Standings.CATEGORY_TEXT[category] then
-        return AF:Print("Usage: /gms adjust <name> <raid|bank|honor> <+/- points this week> [reason]  (0 removes the correction)")
+        return AF:Print("Usage: /gms adjust <name> <raid|bank|honor|dungeon> <+/- points this week> [reason]  (0 removes the correction)")
     end
     local name, err = AF:ResolveName(who)
     if not name then return AF:Print(err) end
@@ -553,6 +555,8 @@ commands.rules = function() AF.UI:ShowRules() end
 commands.attune = function() AF.UI:ShowAttunements() end
 commands.invite = function() AF.UI:ShowInvites() end
 commands.setup = function() AF.UI:ShowSetup() end
+commands.settings = function() AF.UI:OpenSettings() end
+commands.welcome = function() AF.UI:ShowWelcome() end
 commands.minimap = function() AF.UI:ToggleMinimap() end
 commands.crafters = function(args)
     AF.UI:ShowCrafters()

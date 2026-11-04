@@ -2774,6 +2774,8 @@ local MENU = {
     false,
     { "Loot history", function() UI:ShowLootHistory() end, true },
     { "Options", function() UI:ToggleOptions() end, true },
+    false,
+    { "Settings", function() UI:OpenSettings() end },
     { "Hide this button", function() UI:SetMinimapShown(false) end },
 }
 
@@ -2901,12 +2903,205 @@ function UI:ToggleMinimap()
     self:SetMinimapShown(MinimapPrefs().hidden == true)
 end
 
+-------------------------------------------------------------------------------
+--  Welcome guide: what GMS is, once per account, for everyone in a guild
+-------------------------------------------------------------------------------
+local welcome
+local WELCOME_DELAY = 12
+
+local function WelcomeText()
+    local cfg, a = AF.Config, AccentHex()
+    local sources = {}
+    for _, f in ipairs(cfg.FEATURES) do
+        if f.category and cfg:Feature(f.key) then table.insert(sources, AF.Standings.CATEGORY_TEXT[f.key]:lower()) end
+    end
+    local lines = {
+        ("%sYour effort|r is what you put into the guild over the last 4 weeks: %s. It updates by itself while you play."):format(
+            a, table.concat(sources, ", ")),
+        ("%sOfficers see everyone's effort|r when they hand out loot. They decide who gets an item; the addon never does."):format(a),
+        ("%sWhen loot drops|r you get a popup: Main spec, Off spec or Pass, with an optional note."):format(a),
+        ("%sThe Me tab|r shows your own numbers and what's still open this week. Rules explains how it's scored."):format(a),
+    }
+    local extras = {}
+    if cfg:Feature("wishlist") then table.insert(extras, "Wishlist (items you want, only officers see it)") end
+    if cfg:Feature("crafters") then table.insert(extras, "Crafters (who can make what; open your profession windows to share yours)") end
+    if cfg:Feature("attune") then table.insert(extras, "Attunements") end
+    if #extras > 0 then
+        table.insert(lines, ("%sAlso in the window:|r %s."):format(a, table.concat(extras, ", ")))
+    end
+    if AF.Config:CanEdit() then
+        table.insert(lines, ("%sAs an officer|r you find guild setup and the effort rules in Options. /gms test tries the loot windows alone."):format(a))
+    end
+    table.insert(lines, "Open it any time with /gms or the minimap button.")
+    return "•  " .. table.concat(lines, "\n\n•  ")
+end
+
+local function MarkWelcomed()
+    AF.db.prefs = AF.db.prefs or {}
+    AF.db.prefs.welcomed = true
+end
+
+local function CreateWelcome()
+    welcome = Theme.Window("GMSWelcome", "Welcome to Guild Management System", 440, 100, 120)
+    welcome.logo = welcome:CreateTexture(nil, "ARTWORK")
+    welcome.logo:SetSize(40, 40)
+    welcome.logo:SetPoint("TOPLEFT", 16, -38)
+    welcome.logo:SetTexture(Theme.LOGO)
+    welcome.body = Theme.Text(welcome, 12)
+    welcome.body:SetPoint("TOPLEFT", welcome.logo, "TOPRIGHT", 14, 0)
+    welcome.body:SetWidth(354)
+    welcome.body:SetWordWrap(true)
+    welcome.body:SetJustifyV("TOP")
+    local done = Theme.Button(welcome, "Got it", 90, 24)
+    done:SetPoint("BOTTOMRIGHT", -14, 12)
+    done:SetScript("OnClick", function() welcome:Hide() end)
+    local me = Theme.Button(welcome, "Show my effort", 120, 24)
+    me:SetPoint("RIGHT", done, "LEFT", -8, 0)
+    me:SetScript("OnClick", function()
+        welcome:Hide()
+        UI:ShowMe()
+    end)
+    welcome:SetScript("OnHide", MarkWelcomed)
+end
+
+function UI:ShowWelcome()
+    if not welcome then CreateWelcome() end
+    welcome.body:SetText(WelcomeText())
+    welcome:SetHeight(38 + math.max(40, welcome.body:GetStringHeight()) + 56)
+    welcome:Show()
+end
+
+local function OfferWelcome()
+    if AF.db.prefs and AF.db.prefs.welcomed then return end
+    if not IsInGuild() or not AF.playerName then return end
+    if AF:IsGM() and not AF.Config:Raw("setupDone") then return end   -- setup comes first; welcome next time
+    UI:ShowWelcome()
+end
+
+-------------------------------------------------------------------------------
+--  The game's settings (Options -> AddOns -> Guild Management System)
+-------------------------------------------------------------------------------
+local settingsCategory
+
+local function BuildSettings(panel)
+    local logo = panel:CreateTexture(nil, "ARTWORK")
+    logo:SetSize(48, 48)
+    logo:SetPoint("TOPLEFT", 16, -16)
+    logo:SetTexture(Theme.LOGO)
+    local title = Theme.Text(panel, 16, C.bright, nil, true)
+    title:SetPoint("TOPLEFT", logo, "TOPRIGHT", 12, -4)
+    title:SetText("Guild Management System")
+    local sub = Theme.Text(panel, 12, C.dim)
+    sub:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -4)
+    sub:SetText(("Version %s  ·  /gms help lists every command"):format(AF.VERSION_STRING))
+
+    -- Opening one of our windows closes the game's settings first.
+    local function Open(fn)
+        return function()
+            if SettingsPanel and SettingsPanel:IsShown() then HideUIPanel(SettingsPanel) end
+            if InterfaceOptionsFrame and InterfaceOptionsFrame:IsShown() then HideUIPanel(InterfaceOptionsFrame) end
+            fn()
+        end
+    end
+    local y = -84
+    local function Heading(text)
+        Theme.Label(panel, text):SetPoint("TOPLEFT", 18, y)
+        y = y - 24
+    end
+
+    Heading("Open")
+    local x = 18
+    for _, def in ipairs({
+        { "Guild Management System", function() UI:ShowMain(1) end, 190 },
+        { "My effort", function() UI:ShowMe() end, 100 },
+        { "Welcome guide", function() UI:ShowWelcome() end, 120 },
+    }) do
+        local b = Theme.Button(panel, def[1], def[3], 24)
+        b:SetPoint("TOPLEFT", x, y)
+        b:SetScript("OnClick", Open(def[2]))
+        x = x + def[3] + 8
+    end
+    y = y - 40
+
+    Heading("Officers")
+    panel.officer = {}
+    x = 18
+    for _, def in ipairs({
+        { "Guild setup", function() UI:ShowSetup() end, 120 },
+        { "Effort rules", function() UI:ToggleOptions() end, 120 },
+    }) do
+        local b = Theme.Button(panel, def[1], def[3], 24)
+        b:SetPoint("TOPLEFT", x, y)
+        b:SetScript("OnClick", Open(def[2]))
+        table.insert(panel.officer, b)
+        x = x + def[3] + 8
+    end
+    panel.officerNote = Theme.Text(panel, 11, C.dim)
+    panel.officerNote:SetPoint("TOPLEFT", 18, y - 4)
+    panel.officerNote:SetText("Officers set up the guild: which ranks are officers, what counts as effort, which features are on.")
+    y = y - 40
+
+    Heading("This character and account")
+    panel.minimap = Theme.Check(panel, "Show the minimap button", not MinimapPrefs().hidden, function(on)
+        UI:SetMinimapShown(on)
+    end)
+    panel.minimap:SetPoint("TOPLEFT", 20, y)
+    y = y - 26
+    panel.nudge = Theme.Check(panel, "Show my effort summary after logging in", UI.NudgeEnabled(), function(on)
+        AF.db.prefs = AF.db.prefs or {}
+        AF.db.prefs.nudge = on
+    end)
+    panel.nudge:SetPoint("TOPLEFT", 20, y)
+end
+
+-- Keeps the panel in step with what may have changed elsewhere.
+local function RefreshSettings(panel)
+    local officer = AF.Config:CanEdit()
+    for _, b in ipairs(panel.officer) do b:SetShown(officer) end
+    panel.officerNote:SetShown(not officer)
+    for check, on in pairs({ [panel.minimap] = not MinimapPrefs().hidden, [panel.nudge] = UI.NudgeEnabled() }) do
+        check.checked = on
+        check.mark:SetShown(on)
+    end
+end
+
+local function RegisterSettings()
+    local panel = CreateFrame("Frame")
+    panel.name = "Guild Management System"
+    panel:SetScript("OnShow", function(self)
+        if not self.built then
+            BuildSettings(self)
+            self.built = true
+        end
+        RefreshSettings(self)
+    end)
+    if Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnCategory then
+        settingsCategory = Settings.RegisterCanvasLayoutCategory(panel, panel.name)
+        Settings.RegisterAddOnCategory(settingsCategory)
+    elseif InterfaceOptions_AddCategory then
+        InterfaceOptions_AddCategory(panel)
+        settingsCategory = panel
+    end
+end
+
+-- /gms settings: the game's settings at our page.
+function UI:OpenSettings()
+    if not settingsCategory then return AF:Print("This client has no add-on settings page; use /gms instead.") end
+    if Settings and Settings.OpenToCategory and settingsCategory.GetID then
+        Settings.OpenToCategory(settingsCategory:GetID())
+    elseif InterfaceOptionsFrame_OpenToCategory then
+        InterfaceOptionsFrame_OpenToCategory(settingsCategory)
+    end
+end
+
 function UI:Enable()
     C_Timer.After(NUDGE_DELAY, function()
         if UI.NudgeEnabled() and IsInGuild() then UI:ShowNudge() end
     end)
     if Minimap and not MinimapPrefs().hidden then CreateMinimapButton() end
     C_Timer.After(25, OfferSetup)
+    C_Timer.After(WELCOME_DELAY, OfferWelcome)
+    RegisterSettings()
     -- The addon list under the minimap (where the client has one).
     if AddonCompartmentFrame and AddonCompartmentFrame.RegisterAddon then
         pcall(AddonCompartmentFrame.RegisterAddon, AddonCompartmentFrame, {
