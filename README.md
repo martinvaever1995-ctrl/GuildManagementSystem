@@ -116,6 +116,7 @@ becomes the holder and tells the raid.
   or guild members who whisper a keyword.
 - **Login summary:** your effort and what's still open this week (turn it off in the Me tab).
 - **Minimap button:** left-click opens the window, right-click opens a menu, drag moves it.
+- **Guild window tab:** the Guild & Communities window (J) has a GMS tab that opens GMS next to it.
 
 ## For officers
 Officers are the guild ranks set in guild setup (default 0–1; only the GM changes them).

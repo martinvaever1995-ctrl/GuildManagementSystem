@@ -23,7 +23,7 @@ local WHITE = "Interface\\Buttons\\WHITE8x8"
 -- surfaces use it as it is (BRAND) and accents a brighter shade of the same hue.
 local BRAND = { 2 / 255, 53 / 255, 48 / 255 }
 local DEFAULT_ACCENT = { 17 / 255, 212 / 255, 193 / 255 }
-local STATUSBAR = "Interface\TargetingFrame\UI-StatusBar"
+local STATUSBAR = "Interface\\TargetingFrame\\UI-StatusBar"
 
 -- "classic" or "modern", fixed for the session (switching needs a reload).
 local classic = false
@@ -176,8 +176,8 @@ end
 
 -- Classic: a Blizzard border drawn just around a frame (outset), above its
 -- content, so nothing inside has to move.
-local DIALOG_EDGE = { edgeFile = "Interface\DialogFrame\UI-DialogBox-Border", edgeSize = 24 }
-local TOOLTIP_EDGE = { edgeFile = "Interface\Tooltips\UI-Tooltip-Border", edgeSize = 12 }
+local DIALOG_EDGE = { edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border", edgeSize = 24 }
+local TOOLTIP_EDGE = { edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 12 }
 
 local function ClassicBorder(frame, edge, outset)
     local border = CreateFrame("Frame", nil, frame, "BackdropTemplate")
@@ -272,6 +272,7 @@ local function RestorePosition(f, defaultY)
         f:SetPoint("CENTER", UIParent, "CENTER", 0, defaultY or 0)
     end
 end
+Theme.RestorePosition = RestorePosition
 
 -- A movable window with a title bar and close button; Escape closes it and it
 -- reopens where it was left.
@@ -541,7 +542,7 @@ function Theme.Sidebar(window, items, width, onSelect, showOfficer)
         b.bg = b:CreateTexture(nil, "BACKGROUND")
         b.bg:SetAllPoints()
         if classic then
-            b.bg:SetTexture("Interface\QuestFrame\UI-QuestTitleHighlight")
+            b.bg:SetTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
             b.bg:SetBlendMode("ADD")
             b.bg:SetVertexColor(1, 0.82, 0, 0.55)
         else

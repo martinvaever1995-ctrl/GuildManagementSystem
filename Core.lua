@@ -5,8 +5,8 @@
 local ADDON_NAME, AF = ...
 _G.GuildManagementSystem = AF
 
-AF.VERSION = 30100          -- major * 10000 + minor * 100 + patch; bump with ## Version
-AF.VERSION_STRING = "3.1.0"
+AF.VERSION = 30101          -- major * 10000 + minor * 100 + patch; bump with ## Version
+AF.VERSION_STRING = "3.1.1"
 AF.PREFIX = "GuildMgmtSys"  -- addon message prefix (max 16 chars)
 AF.PREFIX_BULK = "GuildMgmtSysBk"   -- the slow lane for large data (Comm.lua)
 
@@ -388,6 +388,10 @@ function AF:Debug()
     local count = 0
     for _ in pairs(self.Standings:All()) do count = count + 1 end
     self:Printf("You: %s | realm: %s / %s", tostring(self.playerName), tostring(GetNormalizedRealmName()), tostring(GetRealmName()))
+    local prefs = self.db.prefs
+    self:Printf("Look: saved %s | loaded %s | EllesmereUI: %s", tostring(prefs and prefs.style or "modern"),
+        self.Theme.IsClassic() and "classic" or "modern", EllesmereUI and "yes" or "no")
+    self:Printf("Guild window tab: %s", self.UI.GuildTabStatus())
     self:Printf("Guild rank: %s (index %s) | GM: %s | officer ranks 0-%d",
         tostring(rankName), tostring(rankIndex), tostring(self:IsGM()), self.Config:Get("officerRank"))
     local guildRaid, canRoll, rollLines = self.GuildLoot.Status()

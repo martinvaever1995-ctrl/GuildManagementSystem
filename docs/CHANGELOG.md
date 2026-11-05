@@ -1,5 +1,16 @@
 # Guild Management System
 
+## v3.1.1
+
+### New
+- **GMS tab on the guild window:** the Guild & Communities window (J) has a GMS tab below its
+  side tabs. Click it to open GMS next to the guild window. Turn off "Open GMS next to the guild
+  window" in the settings to open it in its usual spot instead.
+
+### Fixes
+- **Classic look:** window and card borders, the sidebar highlight and status bars were missing.
+  They now show the game's own art.
+
 ## v3.1.0
 
 ### Classic look

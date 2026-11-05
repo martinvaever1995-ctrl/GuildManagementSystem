@@ -145,8 +145,17 @@ local function RefreshNav()
     if selected and not main.nav.buttons[selected]:IsShown() and main:IsShown() then main.nav:Select(1) end
 end
 
-function UI:ShowMain(tab)
+function UI:ShowMain(tab, dockTo)
     if not main then CreateMain() end
+    if dockTo then
+        -- Opened from the guild window: sit to its right, without saving that spot.
+        main:ClearAllPoints()
+        main:SetPoint("TOPLEFT", dockTo, "TOPRIGHT", 40, 0)
+        main.docked = true
+    elseif main.docked and not main:IsShown() then
+        Theme.RestorePosition(main)
+        main.docked = nil
+    end
     main:Show()
     main.nav:Select(tab or main.nav.selected or 1)
 end
@@ -2906,6 +2915,167 @@ function UI:ToggleMinimap()
 end
 
 -------------------------------------------------------------------------------
+--  A GMS tab on the guild window (Guild & Communities), below Blizzard's side tabs
+-------------------------------------------------------------------------------
+
+local guildTab
+UI.guildTabStatus = "guild window not opened yet"
+
+function UI.GuildDockEnabled()
+    local prefs = AF.db.prefs
+    return not (prefs and prefs.guildDock == false)
+end
+
+local function GuildTabClick()
+    if main and main:IsShown() then return main:Hide() end
+    UI:ShowMain(1, UI.GuildDockEnabled() and CommunitiesFrame or nil)
+end
+
+-- Blizzard's side tabs on the guild window, top to bottom.
+local SIDE_TABS = { "ChatTab", "RosterTab", "GuildBenefitsTab", "GuildInfoTab" }
+
+-- Is the guild (not another community) selected in the window? Nil when the client can't say.
+local function GuildSelected(frame)
+    if not (frame.GetSelectedClubId and C_Club and C_Club.GetClubInfo) then return nil end
+    local okId, clubId = pcall(frame.GetSelectedClubId, frame)
+    if not okId or not clubId then return nil end
+    local okInfo, info = pcall(C_Club.GetClubInfo, clubId)
+    if not okInfo or not info or info.clubType == nil then return nil end
+    return info.clubType == (Enum and Enum.ClubType and Enum.ClubType.Guild or 2)
+end
+
+local function UpdateGuildTab()
+    local frame, tab = CommunitiesFrame, guildTab
+    if not (frame and tab) then return end
+    -- Every shown tab on the window's right edge: the known ones by key, plus any other
+    -- button sitting just outside the right edge (clients and addons add their own).
+    local tabs, names = {}, {}
+    local function Add(t, name)
+        if t and t ~= tab and t:IsShown() and t:GetBottom() and t:GetTop() and not tContains(tabs, t) then
+            table.insert(tabs, t)
+            table.insert(names, name)
+        end
+    end
+    for _, key in ipairs(SIDE_TABS) do Add(frame[key], key) end
+    local right = frame:GetRight()
+    if right then
+        for _, child in ipairs({ frame:GetChildren() }) do
+            local kind = child.GetObjectType and child:GetObjectType()
+            local left, width = child:GetLeft(), child:GetWidth()
+            if (kind == "CheckButton" or kind == "Button") and left and left >= right - 4 and left <= right + 40
+                and width and width > 0 and width <= 64 then
+                Add(child, child:GetName() or "unnamed")
+            end
+        end
+    end
+    -- Lowest on screen, not by name: skins and clients order the tabs differently.
+    local lowest, lowestKey
+    for i, t in ipairs(tabs) do
+        if not lowest or t:GetBottom() < lowest:GetBottom() then lowest, lowestKey = t, names[i] end
+    end
+    -- The gap Blizzard (or the skin) leaves between its tabs, so ours lines up the same way.
+    local gap = 20
+    if lowest then
+        local nearest
+        for _, t in ipairs(tabs) do
+            if t ~= lowest and t:GetBottom() > lowest:GetTop() and (not nearest or t:GetBottom() < nearest) then
+                nearest = t:GetBottom()
+            end
+        end
+        if nearest then gap = math.max(2, nearest - lowest:GetTop()) end
+    end
+    tab:ClearAllPoints()
+    if lowest then
+        tab:SetPoint("TOPLEFT", lowest, "BOTTOMLEFT", 0, -gap)
+        -- Blizzard's tabs get their size and layer per instance, not from the template.
+        local w, h = lowest:GetSize()
+        if w and w > 0 then tab:SetSize(w, h) end
+        tab:SetFrameStrata(lowest:GetFrameStrata())
+        tab:SetFrameLevel(lowest:GetFrameLevel())
+    else
+        tab:SetPoint("TOPLEFT", frame, "TOPRIGHT", 5, -36)
+    end
+    local guild = GuildSelected(frame)
+    if guild == nil then guild = IsInGuild() end
+    tab:SetShown(guild)
+    UI.guildTabStatus = ("%s, %s, below %s (gap %d) | guild selected: %s | side tabs: %s"):format(
+        guild and "showing" or "hidden", tab.style, lowestKey or "nothing", gap, tostring(GuildSelected(frame)),
+        #names > 0 and table.concat(names, " ") or "none")
+        .. (" | size %dx%d, visible %s, alpha %.2f"):format(tab:GetWidth(), tab:GetHeight(),
+            tostring(tab:IsVisible()), tab:GetEffectiveAlpha())
+end
+
+function UI.GuildTabStatus()
+    if guildTab and CommunitiesFrame then UpdateGuildTab() end
+    return UI.guildTabStatus
+end
+
+local function CreateGuildTab()
+    local frame = CommunitiesFrame
+    if guildTab then return end
+    if not frame then
+        UI.guildTabStatus = "no CommunitiesFrame on this client"
+        return
+    end
+    local ok, tab = pcall(CreateFrame, "CheckButton", "GMSGuildTab", frame, "CommunitiesFrameTabTemplate")
+    if not ok then
+        tab = CreateFrame("CheckButton", "GMSGuildTab", frame)
+        tab:SetSize(32, 32)
+        local bg = tab:CreateTexture(nil, "BACKGROUND")
+        bg:SetPoint("TOPLEFT", -3, 11)
+        bg:SetTexture("Interface\\SpellBook\\SpellBook-SkillLineTab")
+        tab:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+    end
+    tab:SetSize(32, 32)
+    local icon = tab.Icon or tab:CreateTexture(nil, "ARTWORK")
+    icon:ClearAllPoints()
+    icon:SetAllPoints()
+    icon:SetTexture(Theme.LOGO)
+    icon:SetAlpha(1)
+    icon:Show()
+    tab.tooltip = "Guild Management System"
+    tab:SetScript("OnClick", function(self)
+        self:SetChecked(false)
+        GuildTabClick()
+    end)
+    tab:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Guild Management System")
+        GameTooltip:AddLine("Effort, loot, wishlists, crafters and more", 0.8, 0.8, 0.8)
+        GameTooltip:Show()
+    end)
+    tab:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    guildTab = tab
+    guildTab.style = ok and "Blizzard template" or "own style"
+
+    -- Re-place the tab whenever the window or one of Blizzard's tabs shows or hides.
+    local function Queue() C_Timer.After(0, UpdateGuildTab) end
+    frame:HookScript("OnShow", Queue)
+    for _, key in ipairs(SIDE_TABS) do
+        if frame[key] then
+            frame[key]:HookScript("OnShow", Queue)
+            frame[key]:HookScript("OnHide", Queue)
+        end
+    end
+    for _, method in ipairs({ "SelectClub", "OnClubSelected", "SetDisplayMode" }) do
+        if type(frame[method]) == "function" then hooksecurefunc(frame, method, Queue) end
+    end
+    UpdateGuildTab()
+end
+
+local function AddonLoaded(name)
+    if C_AddOns and C_AddOns.IsAddOnLoaded then return C_AddOns.IsAddOnLoaded(name) end
+    return IsAddOnLoaded and IsAddOnLoaded(name)
+end
+
+local function HookGuildWindow()
+    if AddonLoaded("Blizzard_Communities") then return CreateGuildTab() end
+    AF:RegisterEvent("ADDON_LOADED", function(_, name)
+        if name == "Blizzard_Communities" then CreateGuildTab() end
+    end)
+end
+
+-------------------------------------------------------------------------------
 --  Welcome guide: what GMS is, once per account, for everyone in a guild
 -------------------------------------------------------------------------------
 local welcome
@@ -3054,6 +3224,12 @@ local function BuildSettings(panel)
         AF.db.prefs.nudge = on
     end)
     panel.nudge:SetPoint("TOPLEFT", 20, y)
+    y = y - 26
+    panel.guildDock = Theme.Check(panel, "Open GMS next to the guild window from its GMS tab", UI.GuildDockEnabled(), function(on)
+        AF.db.prefs = AF.db.prefs or {}
+        AF.db.prefs.guildDock = on
+    end)
+    panel.guildDock:SetPoint("TOPLEFT", 20, y)
     y = y - 40
 
     Heading("Look")
@@ -3076,7 +3252,8 @@ local function RefreshSettings(panel)
     local officer = AF.Config:CanEdit()
     for _, b in ipairs(panel.officer) do b:SetShown(officer) end
     panel.officerNote:SetShown(not officer)
-    for check, on in pairs({ [panel.minimap] = not MinimapPrefs().hidden, [panel.nudge] = UI.NudgeEnabled() }) do
+    for check, on in pairs({ [panel.minimap] = not MinimapPrefs().hidden, [panel.nudge] = UI.NudgeEnabled(),
+        [panel.guildDock] = UI.GuildDockEnabled() }) do
         check.checked = on
         check.mark:SetShown(on)
     end
@@ -3157,6 +3334,7 @@ function UI:Enable()
         if UI.NudgeEnabled() and IsInGuild() then UI:ShowNudge() end
     end)
     if Minimap and not MinimapPrefs().hidden then CreateMinimapButton() end
+    HookGuildWindow()
     C_Timer.After(25, OfferSetup)
     C_Timer.After(WELCOME_DELAY, OfferWelcome)
     RegisterSettings()
