@@ -1,5 +1,12 @@
 # Guild Management System
 
+## v3.2.2
+
+### Fixed
+- **Honor:** honor you earned could go uncounted, because honor is now a currency and GMS was
+  looking for the wrong one. GMS now finds it by name. Honor already earned this week may be
+  missing; officers can add it with `/gms adjust`.
+
 ## v3.2.1
 
 ### New

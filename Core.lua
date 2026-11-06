@@ -5,8 +5,8 @@
 local ADDON_NAME, AF = ...
 _G.GuildManagementSystem = AF
 
-AF.VERSION = 30201          -- major * 10000 + minor * 100 + patch; bump with ## Version
-AF.VERSION_STRING = "3.2.1"
+AF.VERSION = 30202          -- major * 10000 + minor * 100 + patch; bump with ## Version
+AF.VERSION_STRING = "3.2.2"
 AF.DISCORD = "https://discord.gg/U4UCtfRgmE"
 AF.PREFIX = "GuildMgmtSys"  -- addon message prefix (max 16 chars)
 AF.PREFIX_BULK = "GuildMgmtSysBk"   -- the slow lane for large data (Comm.lua)
