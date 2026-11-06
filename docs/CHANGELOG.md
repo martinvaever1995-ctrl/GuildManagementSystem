@@ -1,5 +1,23 @@
 # Guild Management System
 
+## v3.2.0
+
+### New
+- **Layers:** a new tab (`/gms layers`) shows which layer online guild members are on, by zone.
+  Click someone to whisper them for a group invite. It only shows; it never invites or moves
+  anyone. Officers can turn it off in guild setup.
+- **Set pieces in the loot window:** see how many pieces of an item's set each player wears.
+- **Guild bank and Disenchant buttons:** give an item nobody needs to whoever banks or disenchants
+  it. It's recorded in the loot history, but doesn't count as that player winning it.
+- **Raid check:** the Check group window now counts tanks, healers and DPS, and shows who is
+  missing Fortitude, Arcane Intellect or Mark of the Wild.
+- **Window size:** make GMS bigger or smaller in the settings or with `/gms scale 70-130`.
+- **Help and bug reports:** a "Help / report a bug" button (or `/gms discord`) with the link to
+  our Discord: https://discord.gg/U4UCtfRgmE
+
+### Changes
+- The download no longer includes the old AdventForever folder.
+
 ## v3.1.1
 
 ### New

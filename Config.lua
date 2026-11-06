@@ -41,6 +41,7 @@ Config.FEATURES = {
     { key = "wishlist", label = "Wishlists", default = true },
     { key = "crafters", label = "Crafters (profession directory)", default = true },
     { key = "attune", label = "Attunements", default = true },
+    { key = "layers", label = "Layers: who in the guild is on which layer", default = true },
     { key = "guildLoot", label = "Guild loot: in guild raids raiders pass on Rare+, the leader needs", default = false },
 }
 local FEATURE_DEFAULT = {}

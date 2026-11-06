@@ -90,10 +90,19 @@ local function Consumables()
     return flask, elixirs
 end
 
+-- The role of our current spec, for clients where the game doesn't assign one.
+local function SpecRole()
+    if not (GetSpecialization and GetSpecializationRole) then return nil end
+    local okSpec, spec = pcall(GetSpecialization)
+    if not okSpec or not spec or AF:IsSecret(spec) then return nil end
+    local okRole, role = pcall(GetSpecializationRole, spec)
+    if okRole and not AF:IsSecret(role) then return role end
+end
+
 local function OwnReadiness()
     local d, low = Durability()
     local f, e = Consumables()
-    return { v = AF.VERSION, d = d, low = low, f = f, e = e }
+    return { v = AF.VERSION, d = d, low = low, f = f, e = e, ro = SpecRole() }
 end
 
 -------------------------------------------------------------------------------
@@ -126,6 +135,7 @@ AF.Comm:On("RDY", function(sender, r)
         low = type(r.low) == "number" and r.low or nil,
         f = type(r.f) == "string" and r.f or nil,
         e = type(r.e) == "table" and r.e or {},
+        ro = (r.ro == "TANK" or r.ro == "HEALER" or r.ro == "DAMAGER") and r.ro or nil,
         at = GetTime(),
     }
     if sender == AF.playerName then
@@ -172,6 +182,101 @@ local function InRange(unit)
     return inRange and true or false
 end
 
+-------------------------------------------------------------------------------
+--  Raid composition and class buffs (read from the units, so it covers everyone)
+-------------------------------------------------------------------------------
+local ALWAYS_DAMAGE = { MAGE = true, ROGUE = true, HUNTER = true, WARLOCK = true }
+
+-- Each counts once someone of that class is in the group. By spell ID where the
+-- ranks are known, by English name as a fallback.
+local CLASS_BUFFS = {
+    { label = "Fortitude", class = "PRIEST", names = { ["Power Word: Fortitude"] = true, ["Prayer of Fortitude"] = true },
+      ids = { 1243, 1244, 1245, 2791, 10937, 10938, 21562, 21564 } },
+    { label = "Arcane Intellect", class = "MAGE", names = { ["Arcane Intellect"] = true, ["Arcane Brilliance"] = true },
+      ids = { 1459, 1460, 1461, 10156, 10157, 23028 } },
+    { label = "Mark of the Wild", class = "DRUID", names = { ["Mark of the Wild"] = true, ["Gift of the Wild"] = true },
+      ids = { 1126, 5232, 6756, 5234, 8907, 9884, 9885, 21849, 21850 } },
+}
+for _, buff in ipairs(CLASS_BUFFS) do
+    buff.spell = {}
+    for _, id in ipairs(buff.ids) do buff.spell[id] = true end
+end
+
+local BUFF_CACHE = 3        -- seconds: the window refreshes every second
+local buffCache = {}
+
+-- { [buff] = true } for what the unit has up, or nil when it can't be read.
+local function UnitClassBuffs(name, unit)
+    local cached = buffCache[name]
+    if cached and GetTime() - cached.at < BUFF_CACHE then return cached.has end
+    if not (C_UnitAuras and C_UnitAuras.GetAuraDataByIndex) then return nil end
+    local has = {}
+    for i = 1, 40 do
+        local ok, aura = pcall(C_UnitAuras.GetAuraDataByIndex, unit, i, "HELPFUL")
+        if not ok then return nil end
+        if not aura then break end
+        local spell, auraName = aura.spellId, aura.name
+        if AF:IsSecret(spell) or AF:IsSecret(auraName) then return nil end
+        for _, buff in ipairs(CLASS_BUFFS) do
+            if buff.spell[spell] or buff.names[auraName] then has[buff] = true end
+        end
+    end
+    buffCache[name] = { at = GetTime(), has = has }
+    return has
+end
+
+local function RoleOf(row)
+    local role = UnitGroupRolesAssigned and row.unit and UnitGroupRolesAssigned(row.unit)
+    if role and not AF:IsSecret(role) and role ~= "NONE" then return role end
+    if row.r and row.r.ro then return row.r.ro end
+    if ALWAYS_DAMAGE[row.class] then return "DAMAGER" end
+end
+
+-- Fills in row.missing (buff labels, or nil when unreadable) for every row.
+local function AddBuffs(rows)
+    local present = {}
+    for _, row in ipairs(rows) do
+        if row.class then present[row.class] = true end
+    end
+    for _, row in ipairs(rows) do
+        local has = row.unit and row.state ~= "offline" and UnitClassBuffs(row.name, row.unit)
+        if has then
+            row.missing = {}
+            for _, buff in ipairs(CLASS_BUFFS) do
+                if present[buff.class] and not has[buff] then table.insert(row.missing, buff.label) end
+            end
+        end
+    end
+end
+
+-- "2 tanks  ·  4 healers  ·  14 DPS  ·  3 unknown  ·  Missing: Fortitude 4, Arcane Intellect 2"
+function Versions:SummaryText(rows)
+    if #rows == 0 then return "" end
+    local count, missing, order = { TANK = 0, HEALER = 0, DAMAGER = 0, unknown = 0 }, {}, {}
+    for _, row in ipairs(rows) do
+        local role = RoleOf(row) or "unknown"
+        count[role] = (count[role] or 0) + 1
+        for _, label in ipairs(row.missing or {}) do
+            if not missing[label] then
+                missing[label] = 0
+                table.insert(order, label)
+            end
+            missing[label] = missing[label] + 1
+        end
+    end
+    local parts = { ("%d tank%s"):format(count.TANK, count.TANK == 1 and "" or "s"),
+        ("%d healer%s"):format(count.HEALER, count.HEALER == 1 and "" or "s"), ("%d DPS"):format(count.DAMAGER) }
+    if count.unknown > 0 then table.insert(parts, ("%d unknown"):format(count.unknown)) end
+    if #order > 0 then
+        local list = {}
+        for _, label in ipairs(order) do table.insert(list, ("%s %d"):format(label, missing[label])) end
+        table.insert(parts, "Missing: " .. table.concat(list, ", "))
+    else
+        table.insert(parts, "Class buffs: all up")
+    end
+    return table.concat(parts, "  ·  ")
+end
+
 local ORDER = { missing = 1, outdated = 2, offline = 3, waiting = 4, current = 5 }
 
 -- One row per group member:
@@ -200,6 +305,7 @@ function Versions:Rows()
             state = state, v = v, r = r, range = unit and online and InRange(unit) or nil,
         })
     end
+    AddBuffs(rows)
     table.sort(rows, function(a, b)
         if ORDER[a.state] ~= ORDER[b.state] then return ORDER[a.state] < ORDER[b.state] end
         return a.name < b.name

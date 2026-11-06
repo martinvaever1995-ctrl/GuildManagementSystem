@@ -38,6 +38,39 @@ function Loot.EquippedFor(link)
     return out
 end
 
+-- The item set an item belongs to, or nil.
+local function SetID(link)
+    local id = link and select(16, C_Item.GetItemInfo(link))
+    return type(id) == "number" and id > 0 and id or nil
+end
+
+-- Pieces of this item's set the player wears, or nil when it isn't a set item.
+function Loot.SetPieces(link)
+    local id = SetID(link)
+    if not id then return nil end
+    local count = 0
+    for slot = 1, 19 do
+        if SetID(GetInventoryItemLink("player", slot)) == id then count = count + 1 end
+    end
+    return count
+end
+
+-- The set's name and size, as far as this client can tell (either can be nil).
+function Loot.SetInfo(link)
+    local id = SetID(link)
+    if not id then return nil end
+    local name, total
+    if GetItemSetInfo then
+        local ok, value = pcall(GetItemSetInfo, id)
+        if ok and type(value) == "string" then name = value end
+    end
+    if C_LootJournal and C_LootJournal.GetItemSetItems then
+        local ok, items = pcall(C_LootJournal.GetItemSetItems, id)
+        if ok and type(items) == "table" and #items > 0 then total = #items end
+    end
+    return name, total
+end
+
 local function Ilvl(link)
     local level = link and C_Item.GetDetailedItemLevelInfo and C_Item.GetDetailedItemLevelInfo(link)
     if not level and link then level = select(4, C_Item.GetItemInfo(link)) end
@@ -303,7 +336,8 @@ AF.Comm:On("RESP", function(sender, data)
         if type(link) == "string" then table.insert(eq, link) end
     end
     local wish = type(data.w) == "number" and data.w >= 1 and data.w <= AF.Wishlist.MAX and math.floor(data.w) or nil
-    session.responses[sender] = { r = data.r, eq = eq, note = CleanNote(data.n), wish = wish }
+    local set = type(data.s) == "number" and data.s >= 0 and data.s <= 19 and math.floor(data.s) or nil
+    session.responses[sender] = { r = data.r, eq = eq, note = CleanNote(data.n), wish = wish, set = set }
     AF:Fire("LOOT_UPDATED", session.sid)
 end)
 
@@ -403,7 +437,7 @@ local function TestCandidates(session)
     table.insert(list, {
         name = AF.playerName, response = mine and mine.r, equipped = mine and mine.eq or {}, won = {},
         note = mine and mine.note, wish = AF.Wishlist:MyRank(session.link), voters = votes[AF.playerName] or {},
-        member = me, effort = me and me.effort or -1, group = mine and GROUP[mine.r] or 4,
+        set = mine and mine.set, member = me, effort = me and me.effort or -1, group = mine and GROUP[mine.r] or 4,
         cantUse = mine and mine.r ~= Loot.PASS and select(2, Loot.CanUse(session.link, select(2, UnitClass("player")))) or nil,
     })
     return SortCandidates(list)
@@ -431,6 +465,7 @@ function Loot:Candidates(sid)
             response = resp and resp.r,
             equipped = resp and resp.eq or {},
             note = resp and resp.note,
+            set = resp and resp.set,
             -- Rank on their wishlist: from their answer, else from the list we have.
             wish = resp and resp.wish or AF.Wishlist:RankOf(name, session.link),
             member = member,
@@ -445,10 +480,11 @@ function Loot:Candidates(sid)
     return SortCandidates(list)
 end
 
-local function Finalize(session, name, viaTrade)
-    session.awarded = name
+-- purpose: "Guild bank" or "Disenchant" when the item goes to the guild's use.
+local function Finalize(session, name, viaTrade, purpose)
+    session.awarded, session.purpose = name, purpose
     local resp = session.responses[name]
-    local respText = resp and Loot.RESPONSE_TEXT[resp.r] or "no response"
+    local respText = purpose or (resp and Loot.RESPONSE_TEXT[resp.r]) or "no response"
     if AF.Ledger:CanRecord() then
         AF.Ledger:RecordWin(name, session.link, respText)
     else
@@ -464,7 +500,7 @@ local function Finalize(session, name, viaTrade)
         send(text, IsInRaid() and "RAID" or "PARTY")
     end
     session.byTrade = viaTrade
-    AF.Comm:Send("AWARDED", { sid = session.sid, to = name, l = session.link, trade = viaTrade or nil }, "RAID")
+    AF.Comm:Send("AWARDED", { sid = session.sid, to = name, l = session.link, trade = viaTrade or nil, p = purpose }, "RAID")
     AF:Fire("LOOT_UPDATED", session.sid)
 end
 
@@ -483,7 +519,7 @@ end
 
 -- Returns "given" (master loot; recorded once it lands), "trade" (recorded, the
 -- holder trades it), or nil plus a reason.
-function Loot:Award(sid, name)
+function Loot:Award(sid, name, purpose)
     local session = sessions[sid]
     if not session then return nil, "That session is gone." end
     if session.awarded then return nil, "Already awarded to " .. AF:ShortName(session.awarded) .. "." end
@@ -491,12 +527,13 @@ function Loot:Award(sid, name)
         return nil, AF:ShortName(session.authority) .. " hands out this item. You can vote with the Vote button."
     end
     if session.test then
-        session.awarded = name
+        session.awarded, session.purpose = name, purpose
         local response, classFile = session.responses[name] and session.responses[name].r, nil
         for _, fake in ipairs(session.fake) do
             if fake.name == name then response, classFile = fake.response, fake.classFile end
         end
-        AddTestWin(name, classFile, session.link, response and Loot.RESPONSE_TEXT[response] or "no response", GetServerTime())
+        AddTestWin(name, classFile, session.link, purpose or (response and Loot.RESPONSE_TEXT[response]) or "no response",
+            GetServerTime())
         AF:Printf("(test) %s -> %s. Nothing was sent or recorded.", session.link, AF:ShortName(name))
         AF:Fire("LOOT_UPDATED", sid)
         return "test"
@@ -507,7 +544,7 @@ function Loot:Award(sid, name)
             for i = 1, 40 do
                 local candidate = GetMasterLootCandidate(slot, i)
                 if candidate and AF:SameName(candidate, name) then
-                    pending[slot] = { session = session, name = name }
+                    pending[slot] = { session = session, name = name, purpose = purpose }
                     GiveMasterLoot(slot, i)
                     return "given"
                 end
@@ -515,7 +552,7 @@ function Loot:Award(sid, name)
             return nil, AF:ShortName(name) .. " can't receive this item (out of range, or not on the loot list)."
         end
     end
-    Finalize(session, name, true)
+    Finalize(session, name, true, purpose)
     return "trade"
 end
 
@@ -567,7 +604,7 @@ AF:RegisterEvent("LOOT_SLOT_CLEARED", function(_, slot)
     local p = pending[slot]
     if not p then return end
     pending[slot] = nil
-    Finalize(p.session, p.name, false)
+    Finalize(p.session, p.name, false, p.purpose)
 end)
 
 AF:RegisterEvent("LOOT_CLOSED", function()
@@ -610,12 +647,12 @@ function Loot:Respond(entry, response, note)
         local session = sessions[entry.sid]
         if session then
             session.responses[AF.playerName] = { r = response, eq = Loot.EquippedFor(entry.link), note = note,
-                wish = AF.Wishlist:MyRank(entry.link) }
+                wish = AF.Wishlist:MyRank(entry.link), set = Loot.SetPieces(entry.link) }
         end
         AF:Fire("LOOT_UPDATED", entry.sid)
     else
         local payload = { sid = entry.sid, r = response, eq = Loot.EquippedFor(entry.link), n = note,
-            w = AF.Wishlist:MyRank(entry.link) }
+            w = AF.Wishlist:MyRank(entry.link), s = Loot.SetPieces(entry.link) }
         for _, name in ipairs(self:Council(entry.from)) do
             AF.Comm:Send("RESP", payload, "WHISPER", name)
         end
@@ -641,6 +678,7 @@ AF.Comm:On("AWARDED", function(sender, data)
     local copy = sessions[data.sid]
     if copy and copy.mirror and copy.authority == sender and type(data.to) == "string" then
         copy.awarded, copy.byTrade = data.to, data.trade and true or nil
+        copy.purpose = type(data.p) == "string" and data.p or nil
         AF:Fire("LOOT_UPDATED", data.sid)
     end
     AF.UI:ShowPopup()

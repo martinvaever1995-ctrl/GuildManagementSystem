@@ -10,6 +10,8 @@ caps in guild setup (`/gms setup`).
 
 Made for **WoW: Forever**. Wago: https://addons.wago.io/addons/guildmanagementsystem
 
+Need help or found a bug? Join our [Discord](https://discord.gg/U4UCtfRgmE).
+
 ## Installation
 - **CurseForge or Wago:** search for "Guild Management System" in the CurseForge app, WowUp
   or the Wago app, or download it from the [Wago page](https://addons.wago.io/addons/guildmanagementsystem).
@@ -18,8 +20,6 @@ Made for **WoW: Forever**. Wago: https://addons.wago.io/addons/guildmanagementsy
   `Interface/AddOns/GuildManagementSystem/GuildManagementSystem.toc`.
 - Restart the game (a `/reload` isn't enough for a newly installed addon).
 - Everyone in the guild should install it.
-- **Coming from AdventForever?** On Wago it updates to GMS by itself. The download includes
-  AdventForever's last version, which hands your data to GMS on your first login.
 
 ## Guild setup
 - The GM gets the guild setup window the first time (or `/gms setup`):
@@ -84,6 +84,10 @@ points (configurable), up to the dungeon cap.
 The **loot authority** is the master looter when master loot is on, otherwise the raid leader.
 - **Raiders** get a popup: Main spec / Off spec / Pass, with the item level difference, an
   optional note, and a warning when their class can't use the item.
+- **Set pieces:** the loot window shows how many pieces of an item's set each player wears
+  (e.g. "3/8 set").
+- **Guild bank and Disenchant buttons:** give an unwanted item to the person who banks or
+  disenchants it. It's recorded in the loot history, but doesn't count as that player winning it.
 - **The loot window** groups responses Main spec → Off spec → Pass → no answer and sorts by
   effort within each group, purely as a visual aid. Each row shows effort, the 4 weekly
   scores, items won this raid week (officers' clients only), the equipped item, the note,
@@ -110,8 +114,11 @@ becomes the holder and tells the raid.
 - **Crafters** (`/gms crafters`): search who in the guild can craft something, and see
   everyone's professions. Item tooltips show "Crafted by".
 - **Attunements** (`/gms attune`): a grid of who is attuned to what. Officers can add new ones.
-- **Check group** (`/gms check`): addon versions, repair, flasks/elixirs and range for
-  everyone in the group.
+- **Layers** (`/gms layers`): which layer online guild members are on, by zone, so you know who to
+  whisper for a group invite. Your layer is read from NPCs you hover or target. It only shows;
+  it never invites or moves anyone.
+- **Check group** (`/gms check`): addon versions, repair, flasks/elixirs, missing class buffs and
+  range for everyone in the group, with a tanks / healers / DPS count.
 - **Raid invites** (`/gms invite`): invite everyone online at chosen ranks and minimum effort,
   or guild members who whisper a keyword.
 - **Login summary:** your effort and what's still open this week (turn it off in the Me tab).
@@ -123,7 +130,7 @@ Officers are the guild ranks set in guild setup (default 0–1; only the GM chan
 - **Guild setup** (`/gms setup`, or Options → Guild setup):
   - officer ranks (GM only)
   - effort sources on or off: raids, guild bank, honor, dungeons, each with its points per week
-  - features on or off: officer votes, wishlists, crafters, attunements, guild loot
+  - features on or off: officer votes, wishlists, crafters, attunements, layers, guild loot
 - **Options** (`/gms options`):
   - the four caps (together at most 200 a week)
   - points per dungeon run, guild members needed for a dungeon run
@@ -155,6 +162,8 @@ Officers are the guild ranks set in guild setup (default 0–1; only the GM chan
 No officer or public notes are used.
 
 ## Look
+Make the windows bigger or smaller in the settings or with `/gms scale 70-130`.
+
 Two looks, picked per player in the settings or with `/gms style`: **Modern**, a flat dark
 theme in the GMS brand green, and **Classic**, the game's own frames, buttons and font with gold
 headings. In Modern, with EllesmereUI installed, its third-party skinning
@@ -166,7 +175,7 @@ that off per addon in EllesmereUI's options.
 
 | Command | What it does |
 |---|---|
-| `/gms` | Main window: Effort, Me, Rules, Bank, Wishlist, Crafters and Attunements tabs (officers also get Loot history, Log and Options) |
+| `/gms` | Main window: Effort, Me, Rules, Bank, Wishlist, Crafters, Attunements and Layers tabs (officers also get Loot history, Log and Options) |
 | `/gms me` | Your own effort: the split per category, what's left this week, the last 4 weeks |
 | `/gms rules` | How effort is scored, with the guild's current numbers |
 | `/gms main` | Make this character your main |
@@ -179,11 +188,14 @@ that off per addon in EllesmereUI's options.
 | `/gms wish [item]` | Your wishlist, or add an item to it |
 | `/gms crafters [item]` | Who in the guild can craft something, or everyone's professions |
 | `/gms attune` | Who in the guild is attuned to which raid (officers add or remove attunements) |
+| `/gms layers` | Which layer online guild members are on, and who to whisper for an invite |
 | `/gms versions` (or `/gms check`) | Who in your group has the addon and which version, with durability, flasks / elixirs and range |
 | `/gms invite` | Raid invites by rank and minimum effort, and invites by whisper keyword |
 | `/gms minimap` | Show or hide the minimap button |
+| `/gms scale 70-130` | Window size in percent (100 is normal) |
 | `/gms settings` | This addon's page in the game's settings |
 | `/gms welcome` | The short guide to what GMS does |
+| `/gms discord` (or `/gms bug`) | Need help or found a bug? The link to our Discord, ready to copy |
 | `/gms style modern\|classic` | The flat GMS look or the game's own Blizzard style |
 | `/gms setup` | Guild setup: officer ranks, effort sources, features (officers edit) |
 | `/gms options` / `/gms config` | Effort rules (officers edit, everyone views) / print them |

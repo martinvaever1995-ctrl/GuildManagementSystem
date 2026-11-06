@@ -515,11 +515,15 @@ function Ledger:RecordRun(report, reporter)
 end
 
 -- Items a player (any of their characters) won in a week.
+-- Awards for the guild's use, not the player's: they stay in the history but don't
+-- count as that player winning something.
+Ledger.FOR_GUILD = { ["Guild bank"] = true, ["Disenchant"] = true }
+
 function Ledger:Won(week, name)
     local out = {}
     for _, char in ipairs(self:Characters(name)) do
         for _, e in ipairs(won[week] and won[week][char] or {}) do
-            if Live(e) then table.insert(out, e.l) end
+            if Live(e) and not self.FOR_GUILD[e.r] then table.insert(out, e.l) end
         end
     end
     return out

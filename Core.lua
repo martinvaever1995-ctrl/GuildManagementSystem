@@ -5,8 +5,9 @@
 local ADDON_NAME, AF = ...
 _G.GuildManagementSystem = AF
 
-AF.VERSION = 30101          -- major * 10000 + minor * 100 + patch; bump with ## Version
-AF.VERSION_STRING = "3.1.1"
+AF.VERSION = 30200          -- major * 10000 + minor * 100 + patch; bump with ## Version
+AF.VERSION_STRING = "3.2.0"
+AF.DISCORD = "https://discord.gg/U4UCtfRgmE"
 AF.PREFIX = "GuildMgmtSys"  -- addon message prefix (max 16 chars)
 AF.PREFIX_BULK = "GuildMgmtSysBk"   -- the slow lane for large data (Comm.lua)
 
@@ -392,6 +393,9 @@ function AF:Debug()
     self:Printf("Look: saved %s | loaded %s | EllesmereUI: %s", tostring(prefs and prefs.style or "modern"),
         self.Theme.IsClassic() and "classic" or "modern", EllesmereUI and "yes" or "no")
     self:Printf("Guild window tab: %s", self.UI.GuildTabStatus())
+    local layerMap, layerId, layerZone = self.Layers:Own()
+    self:Printf("Layer: %s, map %s, ID %s | guild members known: %d", tostring(layerZone), tostring(layerMap),
+        tostring(layerId), #self.Layers:List())
     self:Printf("Guild rank: %s (index %s) | GM: %s | officer ranks 0-%d",
         tostring(rankName), tostring(rankIndex), tostring(self:IsGM()), self.Config:Get("officerRank"))
     local guildRaid, canRoll, rollLines = self.GuildLoot.Status()
@@ -436,9 +440,12 @@ local HELP = {
     "/gms invite - raid invites: everyone online at chosen ranks / minimum effort, and guildies who whisper a keyword",
     "/gms settings - this addon's page in the game's settings (minimap button, login summary)",
     "/gms style modern|classic - the flat GMS look or the game's own Blizzard style (reloads)",
+    "/gms scale 70-130 - window size in percent (100 is normal)",
     "/gms welcome - the short guide to what GMS does",
+    "/gms discord - need help or found a bug? The link to our Discord",
     "/gms minimap - show or hide the minimap button (left-click opens, right-click for a menu, drag to move)",
     "/gms attune - who in the guild is attuned to which raid (officers add or remove attunements there)",
+    "/gms layers - which layer guild members are on, and who to whisper for an invite",
     "/gms crafters [item] - who in the guild can craft something; without a search, everyone's professions",
     "/gms wish [shift-click item] - your wishlist (up to 10 items, ranked; only officers see it), or add an item to it",
     "/gms bench add|remove <name>, /gms bench list|clear - players on your bench get credit for guild kills you record (officers)",
@@ -558,11 +565,22 @@ commands.unlink = function(args)
 end
 commands.rules = function() AF.UI:ShowRules() end
 commands.attune = function() AF.UI:ShowAttunements() end
+commands.layers = function() AF.UI:ShowLayers() end
+commands.layer = commands.layers
 commands.invite = function() AF.UI:ShowInvites() end
 commands.setup = function() AF.UI:ShowSetup() end
 commands.settings = function() AF.UI:OpenSettings() end
+commands.scale = function(args)
+    local percent = tonumber(args and args:match("%d+"))
+    if not percent then
+        return AF:Printf("Window size: %d%%. /gms scale 70-130 changes it.", AF.Theme.Scale() * 100 + 0.5)
+    end
+    AF:Printf("Window size: %d%%.", AF.Theme.SetScale(percent / 100) * 100 + 0.5)
+end
 commands.style = function(args) AF.UI:SetStyle(args:lower()) end
 commands.welcome = function() AF.UI:ShowWelcome() end
+commands.discord = function() AF.UI:ShowHelp() end
+commands.bug = commands.discord
 commands.minimap = function() AF.UI:ToggleMinimap() end
 commands.crafters = function(args)
     AF.UI:ShowCrafters()

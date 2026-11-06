@@ -274,11 +274,33 @@ local function RestorePosition(f, defaultY)
 end
 Theme.RestorePosition = RestorePosition
 
+-- Window size: one setting (a share of normal size) for all of our windows.
+local SCALE_MIN, SCALE_MAX = 0.7, 1.3
+local windows = {}
+
+function Theme.Scale()
+    local prefs = AF.db and AF.db.prefs
+    local scale = prefs and tonumber(prefs.scale) or 1
+    return math.max(SCALE_MIN, math.min(SCALE_MAX, scale))
+end
+
+-- Applies at once, in steps of 5%. Returns the size it ended up at.
+function Theme.SetScale(scale)
+    scale = math.floor(scale * 20 + 0.5) / 20
+    scale = math.max(SCALE_MIN, math.min(SCALE_MAX, scale))
+    AF.db.prefs = AF.db.prefs or {}
+    AF.db.prefs.scale = scale
+    for _, f in ipairs(windows) do f:SetScale(scale) end
+    return scale
+end
+
 -- A movable window with a title bar and close button; Escape closes it and it
 -- reopens where it was left.
 function Theme.Window(name, title, width, height, defaultY)
     local f = CreateFrame("Frame", name, UIParent, "BackdropTemplate")
     f:SetSize(width, height)
+    f:SetScale(Theme.Scale())
+    table.insert(windows, f)
     f:SetFrameStrata("HIGH")
     f:SetToplevel(true)
     f:SetClampedToScreen(true)
@@ -532,7 +554,7 @@ function Theme.Sidebar(window, items, width, onSelect, showOfficer)
     divider:SetPoint("TOPRIGHT", -10, -58)
     divider:SetHeight(1)
 
-    local nav = { buttons = {}, items = items }
+    local nav = { buttons = {}, items = items, side = side }
     -- The guild's name at the top (it's known a moment after login).
     function nav:SetTitle(text) name:SetText(text) end
     nav.heading = Theme.Label(side, "Officers")

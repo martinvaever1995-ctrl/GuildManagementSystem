@@ -92,8 +92,8 @@ end
 --  Main window: tabs
 -------------------------------------------------------------------------------
 local main
-local Effort, Me, Rules, LootTab, Log, BankTab, Options, WishTab, CraftTab, AttuneTab =
-    {}, {}, {}, {}, {}, {}, {}, {}, {}, {}
+local Effort, Me, Rules, LootTab, Log, BankTab, Options, WishTab, CraftTab, AttuneTab, LayerTab =
+    {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}
 
 local SIDEBAR_W = 150
 local CONTENT_W = 480
@@ -108,6 +108,7 @@ local NAV = {
     { page = 8, label = "Wishlist", icon = "wish", feature = "wishlist" },
     { page = 9, label = "Crafters", icon = "craft", feature = "crafters" },
     { page = 10, label = "Attunements", icon = "attune", feature = "attune" },
+    { page = 11, label = "Layers", icon = "layers", feature = "layers" },
     { page = 4, label = "Loot history", icon = "loot", officer = true },
     { page = 5, label = "Log", icon = "log", officer = true },
     { page = 7, label = "Options", icon = "options", officer = true },
@@ -121,7 +122,7 @@ end
 local function CreateMain()
     main = Theme.Window("GMSMain", "", SIDEBAR_W + CONTENT_W, 584)
     main.panels = {}
-    for i, page in ipairs({ Effort, Me, Rules, LootTab, Log, BankTab, Options, WishTab, CraftTab, AttuneTab }) do
+    for i, page in ipairs({ Effort, Me, Rules, LootTab, Log, BankTab, Options, WishTab, CraftTab, AttuneTab, LayerTab }) do
         local panel = CreateFrame("Frame", nil, main)
         panel:SetPoint("TOPLEFT", SIDEBAR_W, -25)
         panel:SetPoint("BOTTOMRIGHT")
@@ -131,6 +132,9 @@ local function CreateMain()
         main.panels[i] = panel
     end
     main.nav = Theme.Sidebar(main, NAV, SIDEBAR_W, ShowPage, function() return AF.Ledger:CanRecord() end)
+    local help = Theme.Button(main.nav.side, "Help / report a bug", SIDEBAR_W - 20, 24)
+    help:SetPoint("BOTTOM", main.nav.side, "BOTTOM", 0, 10)
+    help:SetScript("OnClick", function() UI:ShowHelp() end)
     main:SetScript("OnShow", function()
         main.nav:SetTitle((IsInGuild() and GetGuildInfo("player")) or "Guild")
         main.nav:Select(main.nav.selected or 1)
@@ -173,6 +177,7 @@ function UI:ShowRules() self:ShowMain(3) end
 function UI:ShowWishlist() self:ShowMain(8) end
 function UI:ShowCrafters() self:ShowMain(9) end
 function UI:ShowAttunements() self:ShowMain(10) end
+function UI:ShowLayers() self:ShowMain(11) end
 
 local function Visible(page) return main and main:IsShown() and page.panel and page.panel:IsShown() end
 
@@ -719,15 +724,18 @@ function LootTab:Refresh()
     else
         local byName, list = {}, {}
         for _, e in ipairs(wins) do        -- newest first, so the first one seen is the latest
-            local p = byName[e.n]
-            if not p then
-                p = { name = e.n, items = 0, main = 0, off = 0, t = e.t, lastLink = e.l, wins = {}, classFile = e.classFile }
-                byName[e.n] = p
-                table.insert(list, p)
+            -- Bank and disenchant awards aren't the player's: only the Items view lists them.
+            if not AF.Ledger.FOR_GUILD[e.r] then
+                local p = byName[e.n]
+                if not p then
+                    p = { name = e.n, items = 0, main = 0, off = 0, t = e.t, lastLink = e.l, wins = {}, classFile = e.classFile }
+                    byName[e.n] = p
+                    table.insert(list, p)
+                end
+                p.items = p.items + 1
+                if e.r == "Main spec" then p.main = p.main + 1 elseif e.r == "Off spec" then p.off = p.off + 1 end
+                table.insert(p.wins, e)
             end
-            p.items = p.items + 1
-            if e.r == "Main spec" then p.main = p.main + 1 elseif e.r == "Off spec" then p.off = p.off + 1 end
-            table.insert(p.wins, e)
         end
         table.sort(list, function(a, b)
             local x, y = a[playerSort], b[playerSort]
@@ -1550,6 +1558,86 @@ AF:On("ATTUNEMENTS_UPDATED", function()
     if Visible(AttuneTab) then AttuneTab:Refresh() end
 end)
 
+-------------------------------------------------------------------------------
+--  Layers tab: who is on which layer, and who to whisper. It never invites anyone.
+-------------------------------------------------------------------------------
+local function SeenText(t)
+    local age = math.max(0, time() - (t or time()))
+    if age < 60 then return "just now" end
+    if age < 3600 then return ("%d min ago"):format(age / 60) end
+    return ("%d h ago"):format(age / 3600)
+end
+
+function LayerTab:Build(panel)
+    self.panel = panel
+    local heading = Theme.Text(panel, 12, C.bright)
+    heading:SetPoint("TOPLEFT", 16, -16)
+    heading:SetText("Layers")
+    self.info = Theme.Text(panel, 11, C.dim)
+    self.info:SetPoint("TOPLEFT", 16, -36)
+    self.info:SetWidth(448)
+    self.info:SetWordWrap(true)
+
+    self.list = Theme.List(panel, {
+        left = 14, top = -82, rows = 18, rowHeight = 26,
+        emptyText = "No layers known yet. They're read from NPCs people hover, target or see the nameplate of.",
+        columns = {
+            { key = "zone", label = "Zone", width = 150 },
+            { key = "layer", label = "Layer", width = 104 },
+            { key = "name", label = "Player", width = 124 },
+            { key = "seen", label = "Seen", width = 70, justify = "RIGHT" },
+        },
+        render = function(row, d)
+            row.cells.zone:SetText(d.zone)
+            row.cells.zone:SetWordWrap(false)
+            row.cells.zone:SetTextColor(unpack(d.here and C.bright or C.dim))
+            row.cells.layer:SetText(d.same and ("%s (yours)"):format(d.id) or d.id)
+            if d.same then
+                row.cells.layer:SetTextColor(0.31, 0.88, 0.65)
+            else
+                row.cells.layer:SetTextColor(unpack(C.dim))
+            end
+            local member = AF.Standings:All()[d.name]
+            row.cells.name:SetText(AF:ShortName(d.name))
+            row.cells.name:SetTextColor(ClassColor(member and member.classFile))
+            row.cells.seen:SetText(SeenText(d.t))
+            row.cells.seen:SetTextColor(unpack(C.dim))
+        end,
+        onRowEnter = function(row, d)
+            GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
+            GameTooltip:AddLine(AF:ShortName(d.name))
+            GameTooltip:AddLine(("%s, layer %s"):format(d.zone, d.id), 0.8, 0.8, 0.8)
+            if not d.me then
+                GameTooltip:AddLine(" ")
+                GameTooltip:AddLine("Click to whisper them. A group invite can bring you to their layer.",
+                    0.55, 0.55, 0.57, true)
+            end
+            GameTooltip:Show()
+        end,
+        onRowClick = function(d)
+            if not d.me and ChatFrame_SendTell then ChatFrame_SendTell(d.name) end
+        end,
+    })
+end
+
+function LayerTab:Refresh()
+    if not self.panel then return end
+    AF.Layers:Ask()
+    local map, id, zone = AF.Layers:Own()
+    if id then
+        self.info:SetText(("You're in %s on layer %s. Click someone to whisper them. Layers are per zone, so only compare within a zone."):format(zone, id))
+    elseif map then
+        self.info:SetText(("You're in %s. Hover or target any NPC here to read your layer. Layers are per zone, so only compare within a zone."):format(zone))
+    else
+        self.info:SetText("Layers can't be read here (inside an instance).")
+    end
+    self.list:SetData(AF.Layers:List())
+end
+
+AF:On("LAYERS_UPDATED", function()
+    if Visible(LayerTab) then LayerTab:Refresh() end
+end)
+
 StaticPopupDialogs.GMS_ATTUNE_REMOVE = {
     text = "Remove the %s attunement for the whole guild?",
     button1 = REMOVE,
@@ -1685,7 +1773,8 @@ local function RefreshLoot()
                 trade = "  ·  holder unknown (nobody with the addon has it)"
             end
         end
-        loot.header.info:SetText("Awarded to " .. AF:ShortName(session.awarded) .. trade)
+        local purpose = session.purpose and (" (%s)"):format(session.purpose) or ""
+        loot.header.info:SetText("Awarded to " .. AF:ShortName(session.awarded) .. purpose .. trade)
     else
         local answered, total = 0, #AF:GroupMembers()
         for _ in pairs(session.responses) do answered = answered + 1 end
@@ -1698,6 +1787,11 @@ local function RefreshLoot()
             answered, total, council, voted, who))
     end
     loot.list:SetData(AF.Loot:Candidates(session.sid))
+    local canAward = session.authority == AF.playerName and not session.awarded
+    loot.toBank:SetEnabled(canAward)
+    loot.toDisenchant:SetEnabled(canAward)
+    loot.toBank:SetAlpha(canAward and 1 or 0.4)
+    loot.toDisenchant:SetAlpha(canAward and 1 or 0.4)
 end
 
 local function EquippedWidget(row)
@@ -1796,6 +1890,10 @@ local function CreateLoot()
             row.cells.equipped:Set(c.equipped, session and session.link, c.response ~= nil)
             local parts = {}
             if c.cantUse then table.insert(parts, "|cffff5555can't use|r") end
+            if c.set then
+                local total = session and select(2, AF.Loot.SetInfo(session.link))
+                table.insert(parts, ("|cff4fe0a6%s set|r"):format(total and (c.set .. "/" .. total) or (c.set .. " pc")))
+            end
             if c.wish then table.insert(parts, ("|cffffd155wish #%d|r"):format(c.wish)) end
             if c.note then table.insert(parts, c.note) end
             row.cells.note:SetText(table.concat(parts, "  "))
@@ -1821,8 +1919,14 @@ local function CreateLoot()
         end,
         onRowEnter = function(row, c)
             EffortTooltip(row, c.name, c.member)
-            if c.wish or c.note or c.cantUse then GameTooltip:AddLine(" ") end
+            if c.wish or c.note or c.cantUse or c.set then GameTooltip:AddLine(" ") end
             if c.cantUse then GameTooltip:AddLine(c.cantUse .. ".", 1, 0.33, 0.33, true) end
+            if c.set then
+                local tipSession = select(2, AF.Loot:Sessions())[selectedSid]
+                local setName, total = AF.Loot.SetInfo(tipSession and tipSession.link)
+                GameTooltip:AddLine(("%s%d piece%s of %s equipped"):format(total and (total .. " in the set: ") or "", c.set,
+                    c.set == 1 and "" or "s", setName or "this set"), 0.31, 0.88, 0.65, true)
+            end
             if c.wish then
                 GameTooltip:AddLine(("#%d on their wishlist"):format(c.wish), 1, 0.82, 0.33)
             end
@@ -1835,7 +1939,9 @@ local function CreateLoot()
             if AF.Ledger:CanRecord() then
                 local recent = 0
                 for _, e in ipairs(AF.Loot:RecentWins(4)) do
-                    if AF.Standings:MainOf(e.n) == AF.Standings:MainOf(c.name) then recent = recent + 1 end
+                    if not AF.Ledger.FOR_GUILD[e.r] and AF.Standings:MainOf(e.n) == AF.Standings:MainOf(c.name) then
+                        recent = recent + 1
+                    end
                 end
                 GameTooltip:AddLine(("Won in the last 4 weeks: %d"):format(recent), 0.8, 0.8, 0.8)
             end
@@ -1866,10 +1972,23 @@ local function CreateLoot()
 
     local hint = Theme.Text(loot, 11, C.dim)
     hint:SetPoint("BOTTOMLEFT", 70, 14)
-    hint:SetText("Sorted by response, then effort. Officers vote; the order and votes are a guide.")
+    hint:SetText("Sorted by response, then effort: a guide only.")
     local clear = Theme.Button(loot, "Clear awarded", 110)
     clear:SetPoint("BOTTOMRIGHT", -12, 10)
     clear:SetScript("OnClick", function() AF.Loot:ClearAwarded() end)
+    -- For items nobody needs: they go to whoever banks or disenchants, asked each time.
+    local function GuildButton(text, anchor)
+        local b = Theme.Button(loot, text, 90)
+        b:SetPoint("RIGHT", anchor, "LEFT", -6, 0)
+        b:SetScript("OnClick", function()
+            local session = select(2, AF.Loot:Sessions())[selectedSid]
+            if not session or session.awarded or session.authority ~= AF.playerName then return end
+            StaticPopup_Show("GMS_AWARD_GUILD", session.link, text, { sid = session.sid, purpose = text })
+        end)
+        return b
+    end
+    loot.toDisenchant = GuildButton("Disenchant", clear)
+    loot.toBank = GuildButton("Guild bank", loot.toDisenchant)
 
     loot:SetScript("OnShow", RefreshLoot)
 end
@@ -2062,6 +2181,53 @@ StaticPopupDialogs.GMS_AWARD = {
     preferredIndex = 3,
 }
 
+-- Asks who takes an unwanted item; remembers the answer per purpose.
+local function GuildPopupBox(dialog)
+    return dialog.editBox or dialog.EditBox or (dialog.GetEditBox and dialog:GetEditBox())
+end
+
+local function AwardGuild(dialog, data)
+    local box = GuildPopupBox(dialog)
+    local typed = box and box:GetText():match("^%s*(.-)%s*$") or ""
+    for _, name in ipairs(AF:GroupMembers()) do
+        if AF:ShortName(name):lower() == typed:lower() or name:lower() == typed:lower() then
+            AF.db.prefs = AF.db.prefs or {}
+            AF.db.prefs.lootPicks = AF.db.prefs.lootPicks or {}
+            AF.db.prefs.lootPicks[data.purpose] = AF:ShortName(name)
+            local result, err = AF.Loot:Award(data.sid, name, data.purpose)
+            if not result then AF:Print(err) end
+            return
+        end
+    end
+    AF:Printf("%s isn't in your group.", typed ~= "" and typed or "Nobody")
+end
+
+StaticPopupDialogs.GMS_AWARD_GUILD = {
+    text = "%s: %s\n\nWho takes it?",
+    button1 = ACCEPT,
+    button2 = CANCEL,
+    hasEditBox = true,
+    OnShow = function(self, data)
+        local picks = AF.db.prefs and AF.db.prefs.lootPicks
+        local box = GuildPopupBox(self)
+        if box then
+            box:SetText(picks and data and picks[data.purpose] or AF:ShortName(AF.playerName))
+            box:HighlightText()
+        end
+    end,
+    OnAccept = AwardGuild,
+    EditBoxOnEnterPressed = function(self, data)
+        local dialog = self:GetParent()
+        AwardGuild(dialog, data or dialog.data)
+        dialog:Hide()
+    end,
+    EditBoxOnEscapePressed = function(self) self:GetParent():Hide() end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
 -------------------------------------------------------------------------------
 --  Refresh on changes
 -------------------------------------------------------------------------------
@@ -2232,6 +2398,12 @@ local function ConsumableCell(r)
     return Colored(("%d elixir%s"):format(n, n == 1 and "" or "s"), n >= 2 and GREEN or ORANGE)
 end
 
+local function BuffCell(missing)
+    if not missing then return Colored("-", C.faint) end
+    if #missing == 0 then return Colored("all", GREEN) end
+    return Colored(("%d missing"):format(#missing), RED)
+end
+
 local function RangeCell(range)
     if range == nil then return Colored("-", C.faint) end
     return range and Colored("yes", GREEN) or Colored("far", RED)
@@ -2241,6 +2413,7 @@ local function RefreshVersions()
     if not versionsWin or not versionsWin:IsShown() then return end
     local rows = AF.Versions:Rows()
     versionsWin.list:SetData(rows)
+    versionsWin.summary:SetText(AF.Versions:SummaryText(rows))
     local count = {}
     for _, row in ipairs(rows) do count[row.state] = (count[row.state] or 0) + 1 end
     if not IsInGroup() then
@@ -2255,15 +2428,20 @@ local function RefreshVersions()
 end
 
 local function CreateVersions()
-    versionsWin = Theme.Window("GMSVersions", "Versions & readiness", 500, 384, 40)
+    versionsWin = Theme.Window("GMSVersions", "Versions & readiness", 500, 408, 40)
+    versionsWin.summary = Theme.Text(versionsWin, 11, C.dim)
+    versionsWin.summary:SetPoint("TOPLEFT", 14, -34)
+    versionsWin.summary:SetWidth(472)
+    versionsWin.summary:SetWordWrap(false)
     versionsWin.list = Theme.List(versionsWin, {
-        left = 12, top = -32, rows = 12, rowHeight = 24,
+        left = 12, top = -54, rows = 12, rowHeight = 24,
         emptyText = "Join a group to check it.",
         columns = {
-            { key = "name", label = "Player", width = 160 },
-            { key = "version", label = "Version", width = 96 },
-            { key = "repair", label = "Repair", width = 64, justify = "RIGHT" },
-            { key = "cons", label = "Flask / elixirs", width = 100, justify = "RIGHT" },
+            { key = "name", label = "Player", width = 126 },
+            { key = "version", label = "Version", width = 86 },
+            { key = "repair", label = "Repair", width = 52, justify = "RIGHT" },
+            { key = "cons", label = "Flask / elixirs", width = 86, justify = "RIGHT" },
+            { key = "buffs", label = "Buffs", width = 70, justify = "RIGHT" },
             { key = "range", label = "In range", width = 56, justify = "RIGHT" },
         },
         render = function(row, r)
@@ -2272,6 +2450,7 @@ local function CreateVersions()
             row.cells.version:SetText(VersionCell(r))
             row.cells.repair:SetText(RepairCell(r.r))
             row.cells.cons:SetText(ConsumableCell(r.r))
+            row.cells.buffs:SetText(BuffCell(r.missing))
             row.cells.range:SetText(RangeCell(r.range))
         end,
         onRowEnter = function(row, r)
@@ -2282,6 +2461,9 @@ local function CreateVersions()
             elseif r.state == "outdated" then
                 GameTooltip:AddLine(("Running %s; %s is out."):format(AF.Versions.String(r.v),
                     AF.Versions.String(AF.Versions.Newest())), 0.8, 0.8, 0.8, true)
+            end
+            if r.missing and #r.missing > 0 then
+                GameTooltip:AddLine("Missing: " .. table.concat(r.missing, ", "), RED[1], RED[2], RED[3], true)
             end
             local rd = r.r
             if rd then
@@ -2484,7 +2666,7 @@ local function RefreshSetup()
 end
 
 local function CreateSetup()
-    setup = Theme.Window("GMSSetup", "Guild setup", 460, 500, 40)
+    setup = Theme.Window("GMSSetup", "Guild setup", 460, 530, 40)
     local y = -36
     local function Heading(text)
         local h = Theme.Label(setup, text)
@@ -2776,6 +2958,7 @@ local MENU = {
     { "Wishlist", function() UI:ShowWishlist() end, nil, "wishlist" },
     { "Crafters", function() UI:ShowCrafters() end, nil, "crafters" },
     { "Attunements", function() UI:ShowAttunements() end, nil, "attune" },
+    { "Layers", function() UI:ShowLayers() end, nil, "layers" },
     false,
     { "Check group", function() UI:ShowVersions() end },
     { "Raid invites", function() UI:ShowInvites() end },
@@ -2786,6 +2969,7 @@ local MENU = {
     { "Options", function() UI:ToggleOptions() end, true },
     false,
     { "Settings", function() UI:OpenSettings() end },
+    { "Help / report a bug", function() UI:ShowHelp() end },
     { "Hide this button", function() UI:SetMinimapShown(false) end },
 }
 
@@ -3098,6 +3282,7 @@ local function WelcomeText()
     if cfg:Feature("wishlist") then table.insert(extras, "Wishlist (items you want, only officers see it)") end
     if cfg:Feature("crafters") then table.insert(extras, "Crafters (who can make what; open your profession windows to share yours)") end
     if cfg:Feature("attune") then table.insert(extras, "Attunements") end
+    if cfg:Feature("layers") then table.insert(extras, "Layers (who to whisper for an invite to another layer)") end
     if #extras > 0 then
         table.insert(lines, ("%sAlso in the window:|r %s."):format(a, table.concat(extras, ", ")))
     end
@@ -3105,6 +3290,7 @@ local function WelcomeText()
         table.insert(lines, ("%sAs an officer|r you find guild setup and the effort rules in Options. /gms test tries the loot windows alone."):format(a))
     end
     table.insert(lines, "Open it any time with /gms or the minimap button.")
+    table.insert(lines, ("%sNeed help or found a bug?|r Join our Discord: /gms discord."):format(a))
     return "•  " .. table.concat(lines, "\n\n•  ")
 end
 
@@ -3151,6 +3337,53 @@ local function OfferWelcome()
 end
 
 -------------------------------------------------------------------------------
+--  Help: the Discord link, ready to copy (addons can't open a browser)
+-------------------------------------------------------------------------------
+local helpWindow
+
+local function CreateHelp()
+    helpWindow = Theme.Window("GMSHelp", "Help and bug reports", 400, 196)
+    helpWindow:SetFrameStrata("DIALOG")
+    local title = Theme.Text(helpWindow, 13, C.bright, nil, true)
+    title:SetPoint("TOPLEFT", 16, -38)
+    title:SetText("Do you need help or have you found a bug?")
+    local hint = Theme.Text(helpWindow, 12, C.dim)
+    hint:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
+    hint:SetText("Come and tell us on our Discord. Press Ctrl+C to copy the link.")
+
+    local link = Theme.EditBox(helpWindow, 368)
+    link:SetPoint("TOPLEFT", hint, "BOTTOMLEFT", 2, -12)
+    -- Read-only: anything typed snaps back to the link, which stays selected.
+    local function Reset()
+        link:SetText(AF.DISCORD)
+        link:SetCursorPosition(0)
+        link:HighlightText()
+    end
+    link:SetScript("OnTextChanged", function(_, userInput) if userInput then Reset() end end)
+    link:HookScript("OnEditFocusGained", Reset)
+    link:HookScript("OnMouseUp", Reset)
+    link:SetScript("OnEscapePressed", function() helpWindow:Hide() end)
+    link:SetScript("OnEnterPressed", function() helpWindow:Hide() end)
+    helpWindow.link = link
+
+    local version = Theme.Text(helpWindow, 11, C.dim)
+    version:SetPoint("TOPLEFT", link, "BOTTOMLEFT", -2, -10)
+    version:SetText(("When you report a bug, mention your version: GMS %s."):format(AF.VERSION_STRING))
+
+    local done = Theme.Button(helpWindow, "Close", 90, 24)
+    done:SetPoint("BOTTOMRIGHT", -14, 12)
+    done:SetScript("OnClick", function() helpWindow:Hide() end)
+end
+
+function UI:ShowHelp()
+    if not helpWindow then CreateHelp() end
+    helpWindow:Show()
+    helpWindow.link:SetText(AF.DISCORD)
+    helpWindow.link:SetFocus()
+    helpWindow.link:HighlightText()
+end
+
+-------------------------------------------------------------------------------
 --  The game's settings (Options -> AddOns -> Guild Management System)
 -------------------------------------------------------------------------------
 local settingsCategory
@@ -3187,6 +3420,7 @@ local function BuildSettings(panel)
         { "Guild Management System", function() UI:ShowMain(1) end, 190 },
         { "My effort", function() UI:ShowMe() end, 100 },
         { "Welcome guide", function() UI:ShowWelcome() end, 120 },
+        { "Help / report a bug", function() UI:ShowHelp() end, 150 },
     }) do
         local b = Theme.Button(panel, def[1], def[3], 24)
         b:SetPoint("TOPLEFT", x, y)
@@ -3245,6 +3479,25 @@ local function BuildSettings(panel)
     local styleNote = Theme.Text(panel, 11, C.dim)
     styleNote:SetPoint("TOPLEFT", 18, y - 32)
     styleNote:SetText("Modern: the flat GMS look. Classic: the game's own frames, buttons and font. Changing it reloads your interface.")
+    y = y - 60
+
+    Heading("Window size")
+    local smaller = Theme.Button(panel, "-", 30, 24)
+    smaller:SetPoint("TOPLEFT", 18, y)
+    panel.scaleText = Theme.Text(panel, 12, C.bright)
+    panel.scaleText:SetPoint("LEFT", smaller, "RIGHT", 10, 0)
+    panel.scaleText:SetWidth(44)
+    panel.scaleText:SetJustifyH("CENTER")
+    local larger = Theme.Button(panel, "+", 30, 24)
+    larger:SetPoint("LEFT", panel.scaleText, "RIGHT", 10, 0)
+    local function Step(by)
+        return function()
+            local scale = Theme.SetScale(Theme.Scale() + by)
+            panel.scaleText:SetText(("%d%%"):format(scale * 100 + 0.5))
+        end
+    end
+    smaller:SetScript("OnClick", Step(-0.05))
+    larger:SetScript("OnClick", Step(0.05))
 end
 
 -- Keeps the panel in step with what may have changed elsewhere.
@@ -3252,6 +3505,7 @@ local function RefreshSettings(panel)
     local officer = AF.Config:CanEdit()
     for _, b in ipairs(panel.officer) do b:SetShown(officer) end
     panel.officerNote:SetShown(not officer)
+    panel.scaleText:SetText(("%d%%"):format(Theme.Scale() * 100 + 0.5))
     for check, on in pairs({ [panel.minimap] = not MinimapPrefs().hidden, [panel.nudge] = UI.NudgeEnabled(),
         [panel.guildDock] = UI.GuildDockEnabled() }) do
         check.checked = on

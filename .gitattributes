@@ -6,7 +6,6 @@
 
 # Left out of GitHub's "Source code" downloads: only the addon itself goes in.
 docs export-ignore
-Legacy export-ignore
 .github export-ignore
 .gitattributes export-ignore
 .gitignore export-ignore
