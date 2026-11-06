@@ -2919,8 +2919,13 @@ end
 local UPDATE_SHOWN = 30
 local updateCard, updateShown
 
+function UI.UpdateCardEnabled()
+    local prefs = AF.db and AF.db.prefs
+    return not prefs or prefs.updateCard ~= false
+end
+
 AF:On("NEWER_VERSION", function(version)
-    if updateShown then return end
+    if updateShown or not UI.UpdateCardEnabled() then return end
     updateShown = true
     AF:WhenUnrestricted(function()
         if not updateCard then updateCard = CreateCard("GMSUpdate", "Guild Management System update", UPDATE_SHOWN) end
@@ -3459,6 +3464,12 @@ local function BuildSettings(panel)
     end)
     panel.nudge:SetPoint("TOPLEFT", 20, y)
     y = y - 26
+    panel.updateCard = Theme.Check(panel, "Show a card when a new version is out", UI.UpdateCardEnabled(), function(on)
+        AF.db.prefs = AF.db.prefs or {}
+        AF.db.prefs.updateCard = on
+    end)
+    panel.updateCard:SetPoint("TOPLEFT", 20, y)
+    y = y - 26
     panel.guildDock = Theme.Check(panel, "Open GMS next to the guild window from its GMS tab", UI.GuildDockEnabled(), function(on)
         AF.db.prefs = AF.db.prefs or {}
         AF.db.prefs.guildDock = on
@@ -3507,7 +3518,7 @@ local function RefreshSettings(panel)
     panel.officerNote:SetShown(not officer)
     panel.scaleText:SetText(("%d%%"):format(Theme.Scale() * 100 + 0.5))
     for check, on in pairs({ [panel.minimap] = not MinimapPrefs().hidden, [panel.nudge] = UI.NudgeEnabled(),
-        [panel.guildDock] = UI.GuildDockEnabled() }) do
+        [panel.updateCard] = UI.UpdateCardEnabled(), [panel.guildDock] = UI.GuildDockEnabled() }) do
         check.checked = on
         check.mark:SetShown(on)
     end

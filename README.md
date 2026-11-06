@@ -122,6 +122,8 @@ becomes the holder and tells the raid.
 - **Raid invites** (`/gms invite`): invite everyone online at chosen ranks and minimum effort,
   or guild members who whisper a keyword.
 - **Login summary:** your effort and what's still open this week (turn it off in the Me tab).
+- **Update card:** a card when a new version is out (turn it off in the settings). The chat
+  message still shows.
 - **Minimap button:** left-click opens the window, right-click opens a menu, drag moves it.
 - **Guild window tab:** the Guild & Communities window (J) has a GMS tab that opens GMS next to it.
 

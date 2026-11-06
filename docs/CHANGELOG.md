@@ -1,5 +1,11 @@
 # Guild Management System
 
+## v3.2.1
+
+### New
+- **Update card setting:** turn off the card that shows when a new version is out, in the settings
+  page. The chat message still shows.
+
 ## v3.2.0
 
 ### New
