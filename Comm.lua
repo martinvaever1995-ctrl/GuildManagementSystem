@@ -28,6 +28,13 @@ local partial = {}
 local nextGroup = 0
 local ticker
 
+-- Whispers to someone who has logged off fail one by one, each with a "No player
+-- named ..." line in chat. We stop whispering a player once they go offline (until
+-- they come back or message us), and hide those lines for our own whispers.
+local NOT_FOUND_WINDOW = 5      -- seconds after our last whisper that a "not found" line is ours
+local offline = {}              -- full name -> true while they're offline
+local lastWhisper = {}          -- full name -> GetTime() of our last whisper to them
+
 -------------------------------------------------------------------------------
 --  Serializer: strings are length-prefixed, so any byte is safe in them.
 -------------------------------------------------------------------------------
@@ -96,10 +103,13 @@ end
 local Result = Enum.SendAddonMessageResult
 
 local function TrySend(lane, item)
+    if item.who and offline[item.who] then return true end      -- they left: drop it
     if AF:IsChatLocked() then return false end
     local ok, result = pcall(C_ChatInfo.SendAddonMessage, lane.prefix, item.msg, item.channel, item.target)
     if not ok then return false end
-    return result == nil or result == true or (Result and result == Result.Success)
+    local sent = result == nil or result == true or (Result and result == Result.Success)
+    if sent and item.who then lastWhisper[item.who] = GetTime() end
+    return sent
 end
 
 -- Drops every queued chunk of one message, so a receiver never gets half of it.
@@ -157,12 +167,14 @@ function Comm:Send(kind, payload, channel, target, bulk)
     if channel == "WHISPER" and target == AF.playerName then
         return Dispatch(target, data, channel)   -- talking to ourselves: skip the wire
     end
+    local who = channel == "WHISPER" and AF:FullName(target) or nil
+    if channel == "WHISPER" and (not who or offline[who]) then return end
 
     nextGroup = nextGroup + 1
     local queue = (bulk and lanes.bulk or lanes.main).queue
     local now = not bulk and GetTime() or nil
     local function Add(msg)
-        table.insert(queue, { msg = msg, channel = channel, target = target, group = nextGroup, queued = now })
+        table.insert(queue, { msg = msg, channel = channel, target = target, who = who, group = nextGroup, queued = now })
     end
     if #data <= CHUNK then
         Add("S" .. data)
@@ -193,6 +205,7 @@ AF:RegisterEvent("CHAT_MSG_ADDON", function(_, prefix, msg, channel, sender)
     if AF:IsSecret(msg) or AF:IsSecret(sender) then return end
     sender = AF:FullName(sender)
     if not sender then return end
+    offline[sender] = nil
     local header, data = msg:sub(1, 1), msg:sub(2)
     local key = sender .. "\001" .. channel .. "\001" .. prefix
     if header == "S" then
@@ -210,6 +223,63 @@ AF:RegisterEvent("CHAT_MSG_ADDON", function(_, prefix, msg, channel, sender)
         end
     end
 end)
+
+-------------------------------------------------------------------------------
+--  Players going offline
+-------------------------------------------------------------------------------
+-- A Lua pattern for one of the game's "%s" messages; the name is the capture.
+local function Pattern(format, fallback)
+    if type(format) ~= "string" or not format:find("%s", 1, true) then format = fallback end
+    local escaped = format:gsub("([%^%$%(%)%.%[%]%*%+%-%?])", "%%%1")
+    escaped = escaped:gsub("%%s", "(.+)", 1)
+    return "^" .. escaped .. "$"
+end
+
+local WENT_OFFLINE = Pattern(ERR_FRIEND_OFFLINE_S, "%s has gone offline.")
+local NOT_FOUND = Pattern(ERR_CHAT_PLAYER_NOT_FOUND_S, "No player named '%s' is currently playing.")
+
+-- Forgets everything still queued for them.
+local function DropWhispers(who)
+    for _, lane in pairs(lanes) do
+        for i = #lane.queue, 1, -1 do
+            if lane.queue[i].who == who then table.remove(lane.queue, i) end
+        end
+    end
+end
+
+local function WentAway(who)
+    if not who or who == AF.playerName then return end
+    offline[who] = true
+    DropWhispers(who)
+end
+
+-- The name in a "No player named ..." line, if we whispered them just now.
+local function OurNotFound(msg)
+    local who = AF:FullName(msg:match(NOT_FOUND))
+    local at = who and lastWhisper[who]
+    return at and GetTime() - at <= NOT_FOUND_WINDOW and who or nil
+end
+
+AF:RegisterEvent("CHAT_MSG_SYSTEM", function(_, msg)
+    if AF:IsSecret(msg) or type(msg) ~= "string" then return end
+    local gone = msg:match(WENT_OFFLINE)
+    if gone then return WentAway(AF:FullName(gone:match("|Hplayer:([^|:]+)") or gone)) end
+    local back = msg:match("|Hplayer:([^|:]+)")         -- "... has come online."
+    if back then
+        local who = AF:FullName(back)
+        if who then offline[who] = nil end
+        return
+    end
+    local who = OurNotFound(msg)
+    if who then WentAway(who) end
+end)
+
+if ChatFrame_AddMessageEventFilter then
+    ChatFrame_AddMessageEventFilter("CHAT_MSG_SYSTEM", function(_, _, msg)
+        if AF:IsSecret(msg) or type(msg) ~= "string" then return false end
+        return OurNotFound(msg) ~= nil
+    end)
+end
 
 function Comm:Init()
     C_ChatInfo.RegisterAddonMessagePrefix(AF.PREFIX)

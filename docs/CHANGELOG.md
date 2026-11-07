@@ -1,5 +1,12 @@
 # Guild Management System
 
+## v3.2.3
+
+### Fixed
+- **"No player named ... is currently playing":** when an officer logged out, the other
+  officers could get a row of these in chat. GMS now stops sending to players who go offline
+  and hides these lines for its own messages.
+
 ## v3.2.2
 
 ### Fixed
