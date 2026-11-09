@@ -10,7 +10,8 @@ caps in guild setup (`/gms setup`).
 
 Made for **WoW: Forever**. Wago: https://addons.wago.io/addons/guildmanagementsystem
 
-Need help or found a bug? Join our [Discord](https://discord.gg/U4UCtfRgmE).
+Need help or found a bug? Join our [Discord](https://discord.gg/U4UCtfRgmE) and paste what
+`/gms selftest` gives you.
 
 ## Installation
 - **CurseForge or Wago:** search for "Guild Management System" in the CurseForge app, WowUp
@@ -96,7 +97,15 @@ The **loot authority** is the master looter when master loot is on, otherwise th
   hands out the loot still decides.
 - **Guild loot (optional, off by default):** in guild raids, raiders automatically pass on
   Rare and better items and the raid leader needs, so the leader can hand them out.
-- **Loot history:** officers see who won what in the last 4 or 8 weeks (`/gms history`).
+- **Loot history:** officers see who won what in the last 4 weeks, 8 weeks, 3 months or all
+  (`/gms history`), with the award reason. The loot window shows each player's last item.
+- **Loot priorities (officers):** set who should get an item first, e.g. "Warrior tank > Rogue",
+  on the Priorities page or with the loot window's Priority button. The loot window shows it and
+  marks matching players "prio 1, 2, ...". Officers also see it in item tooltips.
+- **Award reasons:** when awarding, pick Upgrade, BiS, Off spec, Alt or Other (optional).
+- **Tier tokens:** the loot window says which classes a token is for and how many pieces of a
+  set each player wears.
+- **Wins for everyone (optional, off by default):** raiders see what everyone won this week.
 
 ## Trades (no master loot)
 When an item is awarded by trade, the client that has it in its bags (and looted it recently)
@@ -132,7 +141,8 @@ Officers are the guild ranks set in guild setup (default 0–1; only the GM chan
 - **Guild setup** (`/gms setup`, or Options → Guild setup):
   - officer ranks (GM only)
   - effort sources on or off: raids, guild bank, honor, dungeons, each with its points per week
-  - features on or off: officer votes, wishlists, crafters, attunements, layers, guild loot
+  - features on or off: officer votes, wishlists, crafters, attunements, layers, guild loot,
+    loot priorities, award reasons, tier token info, wins shown to raiders
 - **Options** (`/gms options`):
   - the four caps (together at most 200 a week)
   - points per dungeon run, guild members needed for a dungeon run
@@ -158,8 +168,13 @@ Officers are the guild ranks set in guild setup (default 0–1; only the GM chan
   window says how old it is and which officer sent it.
 - **Per guild:** saved data is kept separately for each guild, so characters in different
   guilds never mix. A character's first login, or a guild change, can ask for one reload.
+- **Archive:** weeks older than 8 weeks leave the ledger, but officers keep a summary of each:
+  everyone's points per category, every award and the wanted items deposited. Officers swap
+  archived weeks, so they all end up with the same ones. Bank goals keep counting old deposits.
 - **Backup:** `/gms export` gives the whole ledger as text to save outside the game;
   `/gms import` merges it back in.
+- **Web export:** `/gms export web` gives the archive and the ledger's weeks as JSON for a
+  website or Discord bot. The format is in [docs/EXPORT.md](docs/EXPORT.md).
 
 No officer or public notes are used.
 
@@ -209,4 +224,7 @@ that off per addon in EllesmereUI's options.
 | `/gms final` | Officers: mark (or unmark) the dungeon boss you just killed as its dungeon's final boss |
 | `/gms link <alt> <main>`, `/gms unlink <name>` | Officers: link characters by hand |
 | `/gms export` / `/gms import` | Officers: back up / restore the ledger |
+| `/gms export web` | Officers: the archive and the ledger's weeks as JSON (docs/EXPORT.md) |
+| `/gms archive` | Officers: what's archived; `/gms archive test` checks the archiving now |
 | `/gms debug` | What the addon can see on this client |
+| `/gms selftest` | A report to copy and send us on Discord when something looks wrong |

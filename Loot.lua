@@ -16,6 +16,19 @@ local Loot = AF:NewModule("Loot")
 Loot.MS, Loot.OS, Loot.PASS = 1, 2, 3
 Loot.RESPONSE_TEXT = { "Main spec", "Off spec", "Pass" }
 
+-- Why an officer gave an item (optional, picked when awarding).
+Loot.REASONS = {
+    { key = "upgrade", text = "Upgrade" },
+    { key = "bis", text = "BiS" },
+    { key = "os", text = "Off spec" },
+    { key = "alt", text = "Alt" },
+    { key = "other", text = "Other" },
+}
+local REASON_TEXT = {}
+for _, r in ipairs(Loot.REASONS) do REASON_TEXT[r.key] = r.text end
+
+function Loot.ReasonText(key) return key and REASON_TEXT[key] or nil end
+
 -- Equip slot -> inventory slots to compare against.
 local SLOTS = {
     INVTYPE_HEAD = { 1 }, INVTYPE_NECK = { 2 }, INVTYPE_SHOULDER = { 3 }, INVTYPE_BODY = { 4 },
@@ -56,9 +69,16 @@ function Loot.SetPieces(link)
 end
 
 -- The set's name and size, as far as this client can tell (either can be nil).
+local SetInfoByID
+
 function Loot.SetInfo(link)
     local id = SetID(link)
     if not id then return nil end
+    return SetInfoByID(id)
+end
+
+-- A set's name and size, as far as this client can tell (either can be nil).
+function SetInfoByID(id)
     local name, total
     if GetItemSetInfo then
         local ok, value = pcall(GetItemSetInfo, id)
@@ -178,6 +198,138 @@ function Loot.CanUse(link, classFile)
     return false, ("%ss can't use %s"):format(className, type(weaponName) == "string" and weaponName:lower() or "this weapon")
 end
 
+Loot.SetInfoByID = function(id) return SetInfoByID(id) end
+
+-------------------------------------------------------------------------------
+--  Tier tokens: no API says which piece a token becomes, so the loot window
+--  shows the classes it's for (its "Classes:" line) and the sets each player
+--  wears.
+-------------------------------------------------------------------------------
+local TOKEN_QUALITY = (Enum and Enum.ItemQuality and Enum.ItemQuality.Epic) or 4
+
+-- An epic for certain classes that can't be equipped itself.
+function Loot.IsToken(link)
+    if type(link) ~= "string" or not AF.Config:Feature("tokens") then return false end
+    local _, _, _, equipLoc = C_Item.GetItemInfoInstant(link)
+    if equipLoc and equipLoc ~= "" and equipLoc ~= "INVTYPE_NON_EQUIP_IGNORE" then return false end
+    local quality = select(3, C_Item.GetItemInfo(link))
+    if type(quality) ~= "number" or quality < TOKEN_QUALITY then return false end
+    local allowed = AllowedClasses(link)
+    return allowed ~= nil and next(allowed) ~= nil
+end
+
+-- The class names a token is for, sorted.
+function Loot.TokenClasses(link)
+    local names = {}
+    for file in pairs(AllowedClasses(link) or {}) do
+        table.insert(names, (LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[file]) or file)
+    end
+    table.sort(names)
+    return names
+end
+
+-- The sets this player wears 2+ pieces of: "setID:count,setID:count" (at most 3).
+function Loot.WornSets()
+    local counts = {}
+    for slot = 1, 19 do
+        local id = SetID(GetInventoryItemLink("player", slot))
+        if id then counts[id] = (counts[id] or 0) + 1 end
+    end
+    local list = {}
+    for id, n in pairs(counts) do
+        if n >= 2 then table.insert(list, { id = id, n = n }) end
+    end
+    table.sort(list, function(a, b) return a.n > b.n end)
+    local parts = {}
+    for i = 1, math.min(3, #list) do table.insert(parts, list[i].id .. ":" .. list[i].n) end
+    return #parts > 0 and table.concat(parts, ",") or nil
+end
+
+-- "setID:count,..." from another player: { { id, n }, ... } or nil.
+local function ParseSets(text)
+    if type(text) ~= "string" or #text > 60 or not text:match("^[%d:,]+$") then return nil end
+    local list = {}
+    for id, n in text:gmatch("(%d+):(%d+)") do
+        table.insert(list, { id = tonumber(id), n = math.min(19, tonumber(n)) })
+    end
+    return #list > 0 and list or nil
+end
+
+-------------------------------------------------------------------------------
+--  Loot priorities (officers set them per item in the shared config)
+-------------------------------------------------------------------------------
+local ROLE_WORDS = { tank = "tank", tanks = "tank", heal = "healer", healer = "healer", healers = "healer",
+    healing = "healer", dps = "dps", damage = "dps" }
+local parsed = {}               -- order text -> { { file = classFile or nil, role, text }, ... }
+
+-- "Warrior tank > Rogue" -> the classes (any language the client knows, or the
+-- English class token) and roles, in order. Unknown words stay as text.
+local function ParseOrder(text)
+    if parsed[text] then return parsed[text] end
+    local classes = {}
+    for file, name in pairs(LOCALIZED_CLASS_NAMES_MALE or {}) do classes[name:lower()] = file end
+    for file, name in pairs(LOCALIZED_CLASS_NAMES_FEMALE or {}) do classes[name:lower()] = file end
+    for file in pairs(RAID_CLASS_COLORS or {}) do classes[file:lower()] = file end
+    local out = {}
+    for part in text:gmatch("[^>]+") do
+        part = part:match("^%s*(.-)%s*$")
+        if part ~= "" then
+            local entry = { text = part }
+            local lower = part:lower()
+            for name, file in pairs(classes) do
+                if lower:find(name, 1, true) then entry.file = file break end
+            end
+            for word in lower:gmatch("%a+") do
+                if ROLE_WORDS[word] then entry.role = ROLE_WORDS[word] end
+            end
+            table.insert(out, entry)
+        end
+    end
+    parsed[text] = out
+    return out
+end
+
+-- The priority for an item: { o = order text, t = note, order = parsed } or nil.
+function Loot.Priority(linkOrID)
+    if not AF.Config:Feature("lootPrio") then return nil end
+    local id = type(linkOrID) == "number" and linkOrID or (linkOrID and C_Item.GetItemInfoInstant(linkOrID))
+    local p = id and AF.Config:Get("prios")[id]
+    if not p then return nil end
+    return { o = p.o, t = p.t, order = p.o and ParseOrder(p.o) or {} }
+end
+
+-- Where a class comes in the priority order (1 = first), or nil.
+function Loot.PrioRank(prio, classFile)
+    if not prio or not classFile then return nil end
+    for i, entry in ipairs(prio.order) do
+        if entry.file == classFile then return i end
+    end
+end
+
+-- Officers see the priority in item tooltips.
+local function AddPrioLines(tooltip, link)
+    if type(link) ~= "string" or AF:IsSecret(link) or not AF.Ledger:CanRecord() then return end
+    local p = Loot.Priority(link)
+    if not p then return end
+    if p.o then tooltip:AddLine("Loot priority: " .. p.o, 1, 0.6, 0.2, true) end
+    if p.t then tooltip:AddLine(p.t, 1, 0.75, 0.45, true) end
+end
+
+if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall and Enum.TooltipDataType then
+    TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tooltip)
+        if tooltip ~= GameTooltip and tooltip ~= ItemRefTooltip then return end
+        local ok, _, link = pcall(tooltip.GetItem, tooltip)
+        if ok then AddPrioLines(tooltip, link) end
+    end)
+else
+    for _, tooltip in ipairs({ GameTooltip, ItemRefTooltip }) do
+        tooltip:HookScript("OnTooltipSetItem", function(self)
+            local _, link = self:GetItem()
+            AddPrioLines(self, link)
+        end)
+    end
+end
+
 -- Notes from other players can't carry chat codes into our windows.
 local function CleanNote(note)
     if type(note) ~= "string" then return nil end
@@ -192,8 +344,10 @@ local TEST_NOTES = { "BiS", "small upgrade", "BiS for tanking", "for my off spec
     "2-piece bonus", "sidegrade" }
 
 -- Items won this raid week, from the officers' ledger (empty on raider clients).
+-- Raiders' clients use the snapshot, when the guild shows wins to everyone.
 function Loot:WonThisWeek(name)
-    return AF.Ledger:Won(AF.Standings.CurrentWeek(), name)
+    if AF.Ledger:CanRecord() then return AF.Ledger:Won(AF.Standings.CurrentWeek(), name) end
+    return AF.Standings:SnapshotWins(name)
 end
 
 -------------------------------------------------------------------------------
@@ -250,9 +404,9 @@ end
 local testWins = {}
 local TEST_HISTORY = 15
 
-local function AddTestWin(name, classFile, link, response, t)
+local function AddTestWin(name, classFile, link, response, t, why)
     table.insert(testWins, { k = "won", id = "test-win-" .. (#testWins + 1), n = name, classFile = classFile,
-        l = link, r = response, t = t, w = AF.Standings.WeekOf(t), by = "Test", test = true })
+        l = link, r = response, y = why, t = t, w = AF.Standings.WeekOf(t), by = "Test", test = true })
 end
 
 local function FillTestHistory(gear)
@@ -337,7 +491,8 @@ AF.Comm:On("RESP", function(sender, data)
     end
     local wish = type(data.w) == "number" and data.w >= 1 and data.w <= AF.Wishlist.MAX and math.floor(data.w) or nil
     local set = type(data.s) == "number" and data.s >= 0 and data.s <= 19 and math.floor(data.s) or nil
-    session.responses[sender] = { r = data.r, eq = eq, note = CleanNote(data.n), wish = wish, set = set }
+    session.responses[sender] = { r = data.r, eq = eq, note = CleanNote(data.n), wish = wish, set = set,
+        sets = ParseSets(data.ts) }
     AF:Fire("LOOT_UPDATED", session.sid)
 end)
 
@@ -425,6 +580,7 @@ local function TestCandidates(session)
     for _, fake in ipairs(session.fake) do
         local resp = fake.response
         table.insert(list, {
+            prio = Loot.PrioRank(Loot.Priority(session.link), fake.classFile),
             name = fake.name, response = resp, equipped = fake.equipped, won = fake.won, note = fake.note, wish = fake.wish,
             member = { classFile = fake.classFile, weeks = fake.weeks, effort = fake.effort },
             effort = fake.effort, group = resp and GROUP[resp] or 4, voters = votes[fake.name] or {},
@@ -437,7 +593,9 @@ local function TestCandidates(session)
     table.insert(list, {
         name = AF.playerName, response = mine and mine.r, equipped = mine and mine.eq or {}, won = {},
         note = mine and mine.note, wish = AF.Wishlist:MyRank(session.link), voters = votes[AF.playerName] or {},
-        set = mine and mine.set, member = me, effort = me and me.effort or -1, group = mine and GROUP[mine.r] or 4,
+        set = mine and mine.set, sets = mine and mine.sets, member = me, effort = me and me.effort or -1,
+        group = mine and GROUP[mine.r] or 4,
+        prio = Loot.PrioRank(Loot.Priority(session.link), select(2, UnitClass("player"))),
         cantUse = mine and mine.r ~= Loot.PASS and select(2, Loot.CanUse(session.link, select(2, UnitClass("player")))) or nil,
     })
     return SortCandidates(list)
@@ -455,12 +613,15 @@ function Loot:Candidates(sid)
         if not inGroup[name] then table.insert(names, name) end   -- answered, then left
     end
     local votes = VotesByCandidate(session)
+    local prio = Loot.Priority(session.link)
     for _, name in ipairs(names) do
         local resp = session.responses[name]
         local member = AF.Standings:Get(name)
         local unit = AF:GroupUnit(name)
         local classFile = (member and member.classFile) or (unit and select(2, UnitClass(unit)))
         table.insert(list, {
+            prio = Loot.PrioRank(prio, classFile),
+            sets = resp and resp.sets,
             name = name,
             response = resp and resp.r,
             equipped = resp and resp.eq or {},
@@ -481,17 +642,20 @@ function Loot:Candidates(sid)
 end
 
 -- purpose: "Guild bank" or "Disenchant" when the item goes to the guild's use.
-local function Finalize(session, name, viaTrade, purpose)
-    session.awarded, session.purpose = name, purpose
+-- why: an award reason key (Loot.REASONS), optional.
+local function Finalize(session, name, viaTrade, purpose, why)
+    session.awarded, session.purpose, session.reason = name, purpose, why
     local resp = session.responses[name]
     local respText = purpose or (resp and Loot.RESPONSE_TEXT[resp.r]) or "no response"
     if AF.Ledger:CanRecord() then
-        AF.Ledger:RecordWin(name, session.link, respText)
+        AF.Ledger:RecordWin(name, session.link, respText, why)
     else
         AF:Print("You're not an officer, so this award isn't recorded under items won this week.")
     end
 
-    local text = ("%s -> %s (%s)"):format(session.link, AF:ShortName(name), respText)
+    local reasonText = Loot.ReasonText(why)
+    local text = ("%s -> %s (%s%s)"):format(session.link, AF:ShortName(name), respText,
+        reasonText and (", " .. reasonText) or "")
     if viaTrade then text = text .. " - please trade it to them" end
     if AF:IsChatLocked() then
         AF:Print(text)
@@ -500,7 +664,8 @@ local function Finalize(session, name, viaTrade, purpose)
         send(text, IsInRaid() and "RAID" or "PARTY")
     end
     session.byTrade = viaTrade
-    AF.Comm:Send("AWARDED", { sid = session.sid, to = name, l = session.link, trade = viaTrade or nil, p = purpose }, "RAID")
+    AF.Comm:Send("AWARDED", { sid = session.sid, to = name, l = session.link, trade = viaTrade or nil, p = purpose, y = why },
+        "RAID")
     AF:Fire("LOOT_UPDATED", session.sid)
 end
 
@@ -518,8 +683,9 @@ local function FindLootSlot(session)
 end
 
 -- Returns "given" (master loot; recorded once it lands), "trade" (recorded, the
--- holder trades it), or nil plus a reason.
-function Loot:Award(sid, name, purpose)
+-- holder trades it), or nil plus a reason. why: an award reason key (optional).
+function Loot:Award(sid, name, purpose, why)
+    if why and not REASON_TEXT[why] then why = nil end
     local session = sessions[sid]
     if not session then return nil, "That session is gone." end
     if session.awarded then return nil, "Already awarded to " .. AF:ShortName(session.awarded) .. "." end
@@ -532,8 +698,9 @@ function Loot:Award(sid, name, purpose)
         for _, fake in ipairs(session.fake) do
             if fake.name == name then response, classFile = fake.response, fake.classFile end
         end
+        session.reason = why
         AddTestWin(name, classFile, session.link, purpose or (response and Loot.RESPONSE_TEXT[response]) or "no response",
-            GetServerTime())
+            GetServerTime(), why)
         AF:Printf("(test) %s -> %s. Nothing was sent or recorded.", session.link, AF:ShortName(name))
         AF:Fire("LOOT_UPDATED", sid)
         return "test"
@@ -544,7 +711,7 @@ function Loot:Award(sid, name, purpose)
             for i = 1, 40 do
                 local candidate = GetMasterLootCandidate(slot, i)
                 if candidate and AF:SameName(candidate, name) then
-                    pending[slot] = { session = session, name = name, purpose = purpose }
+                    pending[slot] = { session = session, name = name, purpose = purpose, why = why }
                     GiveMasterLoot(slot, i)
                     return "given"
                 end
@@ -552,7 +719,7 @@ function Loot:Award(sid, name, purpose)
             return nil, AF:ShortName(name) .. " can't receive this item (out of range, or not on the loot list)."
         end
     end
-    Finalize(session, name, true, purpose)
+    Finalize(session, name, true, purpose, why)
     return "trade"
 end
 
@@ -604,7 +771,7 @@ AF:RegisterEvent("LOOT_SLOT_CLEARED", function(_, slot)
     local p = pending[slot]
     if not p then return end
     pending[slot] = nil
-    Finalize(p.session, p.name, false, p.purpose)
+    Finalize(p.session, p.name, false, p.purpose, p.why)
 end)
 
 AF:RegisterEvent("LOOT_CLOSED", function()
@@ -647,12 +814,14 @@ function Loot:Respond(entry, response, note)
         local session = sessions[entry.sid]
         if session then
             session.responses[AF.playerName] = { r = response, eq = Loot.EquippedFor(entry.link), note = note,
-                wish = AF.Wishlist:MyRank(entry.link), set = Loot.SetPieces(entry.link) }
+                wish = AF.Wishlist:MyRank(entry.link), set = Loot.SetPieces(entry.link),
+                sets = Loot.IsToken(entry.link) and ParseSets(Loot.WornSets()) or nil }
         end
         AF:Fire("LOOT_UPDATED", entry.sid)
     else
         local payload = { sid = entry.sid, r = response, eq = Loot.EquippedFor(entry.link), n = note,
-            w = AF.Wishlist:MyRank(entry.link), s = Loot.SetPieces(entry.link) }
+            w = AF.Wishlist:MyRank(entry.link), s = Loot.SetPieces(entry.link),
+            ts = Loot.IsToken(entry.link) and Loot.WornSets() or nil }
         for _, name in ipairs(self:Council(entry.from)) do
             AF.Comm:Send("RESP", payload, "WHISPER", name)
         end
@@ -679,6 +848,7 @@ AF.Comm:On("AWARDED", function(sender, data)
     if copy and copy.mirror and copy.authority == sender and type(data.to) == "string" then
         copy.awarded, copy.byTrade = data.to, data.trade and true or nil
         copy.purpose = type(data.p) == "string" and data.p or nil
+        copy.reason = type(data.y) == "string" and REASON_TEXT[data.y] and data.y or nil
         AF:Fire("LOOT_UPDATED", data.sid)
     end
     AF.UI:ShowPopup()

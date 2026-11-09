@@ -12,7 +12,9 @@
 --    by   the officer who recorded it, t server time, w raid week, k kind:
 --    "cat"   n = player, c = category, v = correction (+/-) on top of what is
 --            tracked; the newest per week/player/category counts
---    "won"   n = player, l = item link (items won, information only)
+--    "won"   n = player, l = item link, r = response or purpose ("Guild bank",
+--            "Disenchant"), y = award reason key (upgrade, bis, os, alt, other;
+--            optional). Information only.
 --    "dep"   n = player, src = "self" | "log", a = copper, or i = itemID, q = count,
 --            l = link (negative = withdrawn)
 --    "kill"  enc = encounter ID (0 if entered by hand), en = boss name, d = difficulty,
@@ -32,11 +34,16 @@
 --  a count and the highest sequence number). Events are never edited, so merging
 --  is just a union. Raiders get the totals as snapshots (see Standings.lua), and
 --  /gms export / /gms import keep a copy outside the game.
+--
+--  Weeks leaving the KEEP_WEEKS window are folded into the archive first
+--  (Archive.lua): per player and week the points per category, every award and
+--  the wanted items deposited.
 -------------------------------------------------------------------------------
 local _, AF = ...
 local Ledger = AF:NewModule("Ledger")
 
-local KEEP_WEEKS = 8        -- weeks of events kept (the window is 4)
+local KEEP_WEEKS = 8        -- weeks of events kept (the window is 4); older weeks go to the archive
+Ledger.KEEP_WEEKS = KEEP_WEEKS
 local BATCH = 15            -- events per sync message
 local SYNC_SETTLE = 45      -- seconds after login until our ledger counts as synced
 
@@ -133,7 +140,7 @@ local function Valid(e)
     if k == "void" then return type(e.ref) == "string" end
     if type(e.n) ~= "string" then return false end
     if k == "cat" then return AF.Standings.CATEGORY_TEXT[e.c] ~= nil and type(e.v) == "number" end
-    if k == "won" then return type(e.l) == "string" end
+    if k == "won" then return type(e.l) == "string" and (e.y == nil or type(e.y) == "string") end
     if k == "bench" then return type(e.ref) == "string" end
     if k == "honor" then return type(e.h) == "number" end
     if k == "run" then
@@ -201,8 +208,9 @@ function Ledger:SetCategory(name, category, value, reason)
     return Record({ k = "cat", n = name, c = category, v = value, r = reason })
 end
 
-function Ledger:RecordWin(name, link, reason)
-    return Record({ k = "won", n = name, l = link, r = reason })
+-- response: the response text or purpose; why: an award reason key (optional).
+function Ledger:RecordWin(name, link, response, why)
+    return Record({ k = "won", n = name, l = link, r = response, y = why })
 end
 
 -- fields: n, src, t, and a or i/q (l optional). origin/seq: see the header.
@@ -355,22 +363,40 @@ local function SumOver(chars, fn, week)
     return total
 end
 
--- How many of an item the whole guild deposited since a time (goal progress).
--- Per character and week, the larger of the two sources counts, never both.
-function Ledger:DepositedSince(itemID, since)
-    local total = 0
-    for _, byName in pairs(deps) do
-        for _, list in pairs(byName) do
-            local bySource = { self = 0, log = 0 }
-            for _, e in ipairs(list) do
-                if Live(e) and e.i == itemID and e.t >= since then
-                    bySource[e.src] = bySource[e.src] + e.q
-                end
+-- Wanted items deposited in one week from a time on: { itemID = count }, the larger
+-- of the two sources per character, never both.
+local function WeekItems(week, since)
+    local out = {}
+    for _, list in pairs(deps[week] or {}) do
+        local bySource = { self = {}, log = {} }
+        for _, e in ipairs(list) do
+            if Live(e) and e.i and e.t >= since then
+                bySource[e.src][e.i] = (bySource[e.src][e.i] or 0) + e.q
             end
-            total = total + math.max(bySource.self, bySource.log, 0)
+        end
+        local items = {}
+        for _, byItem in pairs(bySource) do
+            for itemID in pairs(byItem) do items[itemID] = true end
+        end
+        for itemID in pairs(items) do
+            local q = math.max(bySource.self[itemID] or 0, bySource.log[itemID] or 0, 0)
+            if q > 0 then out[itemID] = (out[itemID] or 0) + q end
         end
     end
+    return out
+end
+
+-- How many of an item the guild deposited since a time, in the ledger's weeks only.
+function Ledger:LedgerDepositedSince(itemID, since)
+    local total = 0
+    for week in pairs(deps) do total = total + (WeekItems(week, since)[itemID] or 0) end
     return total
+end
+
+-- How many of an item the whole guild deposited since a time (goal progress):
+-- the ledger's weeks plus the archived ones.
+function Ledger:DepositedSince(itemID, since)
+    return self:LedgerDepositedSince(itemID, since) + AF.Archive:DepositedSince(itemID, since)
 end
 
 -- Gold counted for a player's deposits in a week (all their characters).
@@ -530,6 +556,7 @@ function Ledger:Won(week, name)
 end
 
 -- Items won in the last `weeks` weeks (removed ones left out), newest first.
+-- Weeks older than the ledger come from the archive (entries marked archived).
 function Ledger:Wins(weeks)
     local oldest = AF.Standings.CurrentWeek() - weeks + 1
     local out = {}
@@ -542,8 +569,94 @@ function Ledger:Wins(weeks)
             end
         end
     end
-    table.sort(out, Newer)
+    for _, e in ipairs(AF.Archive:Wins(oldest)) do table.insert(out, e) end
+    table.sort(out, function(a, b)
+        if a.t ~= b.t then return a.t > b.t end
+        return (a.id or "") > (b.id or "")
+    end)
     return out
+end
+
+-------------------------------------------------------------------------------
+--  Weeks as a whole (the archive, the web export)
+-------------------------------------------------------------------------------
+-- Raid weeks the ledger has events for (removals left out), oldest first.
+function Ledger:Weeks()
+    local seen, list = {}, {}
+    for _, e in pairs(events) do
+        if e.k ~= "void" and e.k ~= "link" and not seen[e.w] then
+            seen[e.w] = true
+            table.insert(list, e.w)
+        end
+    end
+    table.sort(list)
+    return list
+end
+
+-- Players (mains) with anything recorded in a week, sorted.
+function Ledger:WeekPlayers(week)
+    local seen, out = {}, {}
+    local function Note(name)
+        local main = self:MainOf(name)
+        if not seen[main] then
+            seen[main] = true
+            table.insert(out, main)
+        end
+    end
+    for _, store in ipairs({ cats, deps, honors }) do
+        for name in pairs(store[week] or {}) do Note(name) end
+    end
+    for _, kill in ipairs(kills[week] or {}) do
+        for name in pairs(present[kill.id]) do Note(name) end
+        for name in pairs(benched[kill.id] or {}) do Note(name) end
+    end
+    for _, run in ipairs(runs[week] or {}) do
+        for _, name in ipairs(run.p) do Note(name) end
+    end
+    table.sort(out)
+    return out
+end
+
+-- Live awards of a week, oldest first.
+function Ledger:WeekWins(week)
+    local out = {}
+    for _, list in pairs(won[week] or {}) do
+        for _, e in ipairs(list) do
+            if Live(e) then table.insert(out, e) end
+        end
+    end
+    table.sort(out, function(a, b) return Newer(b, a) end)
+    return out
+end
+
+-- Everything the archive keeps of a week (see Archive.lua), worked out from the
+-- events: points per category per player, awards, wanted items deposited, and
+-- for goals that started during the week, the deposits from their start.
+function Ledger:WeekSummary(week)
+    local s = {}
+    for _, main in ipairs(self:WeekPlayers(week)) do
+        local b = self:Breakdown(week, main)
+        if b then
+            s[main] = ("%d,%d,%d,%d"):format(b.raid or 0, b.bank or 0, b.honor or 0, b.dungeon or 0)
+        end
+    end
+    local l = {}
+    for _, e in ipairs(self:WeekWins(week)) do
+        table.insert(l, { n = e.n, l = e.l, r = e.r, y = e.y, t = e.t, by = e.by })
+    end
+    local g = {}
+    for itemID, goal in pairs(AF.Config:Get("goals")) do
+        if type(goal.since) == "number" and AF.Standings.WeekOf(goal.since) == week then
+            g[itemID] = { s = goal.since, q = WeekItems(week, goal.since)[itemID] or 0 }
+        end
+    end
+    local n = 0
+    for _, e in pairs(events) do
+        if e.w == week then n = n + 1 end
+    end
+    local caps = {}
+    for _, category in ipairs(AF.Standings.CATEGORIES) do table.insert(caps, AF.Config:Get(category .. "Max")) end
+    return { c = table.concat(caps, ","), s = s, l = l, d = WeekItems(week, 0), g = g, n = n }
 end
 
 -- A player's bank-log deposit events in the weeks we keep, removed ones
@@ -565,6 +678,16 @@ function Ledger:Recent(count)
     table.sort(list, Newer)
     for i = #list, count + 1, -1 do list[i] = nil end
     return list
+end
+
+-- For /gms selftest: events per raid week (removals counted apart), total, removals.
+function Ledger:CountsByWeek()
+    local byWeek, total, voids = {}, 0, 0
+    for _, e in pairs(events) do
+        total = total + 1
+        if e.k == "void" then voids = voids + 1 else byWeek[e.w] = (byWeek[e.w] or 0) + 1 end
+    end
+    return byWeek, total, voids
 end
 
 function Ledger:Count()
@@ -756,10 +879,37 @@ function Ledger:Init()
     events = db.events
 end
 
+local function ClearIndexes()
+    for _, t in ipairs({ buckets, cats, won, deps, kills, present, benched, voided, honors, links, runs, runGroups }) do
+        wipe(t)
+    end
+end
+
 function Ledger:Enable()
     local oldest = AF.Standings.CurrentWeek() - KEEP_WEEKS
     for id, e in pairs(events) do
-        if not Valid(e) or (e.w < oldest and not TIMELESS[e.k]) then events[id] = nil else Index(e) end
+        if Valid(e) then Index(e) else events[id] = nil end
+    end
+    -- Weeks leaving the window go to the archive first, worked out from the full
+    -- ledger; then their events are dropped and the rest indexed again.
+    local leaving = {}
+    for _, e in pairs(events) do
+        if e.w < oldest and not TIMELESS[e.k] then leaving[e.w] = true end
+    end
+    if next(leaving) then
+        for week in pairs(leaving) do
+            -- A week that fails to archive keeps its events, and is tried again next login.
+            local ok, err = pcall(function() AF.Archive:Seal(week, Ledger:WeekSummary(week)) end)
+            if not ok then
+                leaving[week] = nil
+                geterrorhandler()(err)
+            end
+        end
+        for id, e in pairs(events) do
+            if leaving[e.w] and not TIMELESS[e.k] then events[id] = nil end
+        end
+        ClearIndexes()
+        for _, e in pairs(events) do Index(e) end
     end
     Ledger.readyAt = GetTime() + SYNC_SETTLE
     -- Wait for the guild roster so we know who the officers are.

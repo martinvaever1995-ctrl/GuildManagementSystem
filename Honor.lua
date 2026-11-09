@@ -195,6 +195,13 @@ function Honor:Enable()
     C_Timer.NewTicker(SEND_GAP, function() Honor:Send() end)
 end
 
+-- This week's honor and the highest an officer confirmed (for /gms selftest).
+function Honor.Pending()
+    if not AF.playerName then return nil end
+    local record = ThisWeek()
+    return Honor.Current(), record.acked
+end
+
 -- What this client offers (for /gms debug).
 function Honor.ApiReport()
     local function Has(name) return type(_G[name]) == "function" end

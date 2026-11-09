@@ -50,6 +50,12 @@ function Standings.WeekOf(t)
     return Standings.CurrentWeek() - weeksBack
 end
 
+-- Server time a raid week starts (the reset before it).
+function Standings.WeekStart(week)
+    local nextReset = GetServerTime() + C_DateAndTime.GetSecondsUntilWeeklyReset()
+    return nextReset - (Standings.CurrentWeek() - week + 1) * WEEK_SECONDS
+end
+
 local function LedgerWeeks(name)
     local current = Standings.CurrentWeek()
     local weeks = {}
@@ -196,6 +202,25 @@ function Standings:SnapshotInfo()
     if snap then return snap.by, snap.t end
 end
 
+-- Items a player won this week, from the snapshot (raiders' clients), as links;
+-- empty unless the guild shows wins to everyone. Uncached items load and show
+-- as "item #id" until then.
+function Standings:SnapshotWins(name)
+    local snap = AF.db.snapshot
+    if not AF.Config:Feature("winsPublic") or not snap or not snap.wn or snap.w ~= Standings.CurrentWeek() then return {} end
+    local out = {}
+    for id in (snap.wn[self:MainOf(name)] or ""):gmatch("%d+") do
+        id = tonumber(id)
+        local link = select(2, C_Item.GetItemInfo(id))
+        if not link then
+            if C_Item.RequestLoadItemDataByID then C_Item.RequestLoadItemDataByID(id) end
+            link = "item #" .. id
+        end
+        table.insert(out, link)
+    end
+    return out
+end
+
 -- How many of an item the guild has deposited toward its goal (nil: no goal).
 function Standings:GoalProgress(itemID)
     local goal = AF.Config:Get("goals")[itemID]
@@ -228,7 +253,24 @@ local function BuildSnapshot()
     end
     local g = {}
     for itemID, goal in pairs(AF.Config:Get("goals")) do g[itemID] = AF.Ledger:DepositedSince(itemID, goal.since) end
-    return { t = GetServerTime(), w = Standings.CurrentWeek(), s = s, sd = sd, m = AF.Ledger:AltMap(), g = g }
+    -- Items won this week, per main, when the guild shows them to everyone.
+    local wn
+    if AF.Config:Feature("winsPublic") then
+        wn = {}
+        local current = Standings.CurrentWeek()
+        for _, e in ipairs(AF.Ledger:WeekWins(current)) do
+            local main = AF.Ledger:MainOf(e.n)
+            if not wn[main] then
+                local ids = {}
+                for _, link in ipairs(AF.Ledger:Won(current, main)) do
+                    local id = C_Item.GetItemInfoInstant(link)
+                    if id then table.insert(ids, id) end
+                end
+                if #ids > 0 then wn[main] = table.concat(ids, ",") end
+            end
+        end
+    end
+    return { t = GetServerTime(), w = Standings.CurrentWeek(), s = s, sd = sd, m = AF.Ledger:AltMap(), g = g, wn = wn }
 end
 
 local function SendSnapshot()
@@ -259,6 +301,12 @@ local function ValidSnapshot(data)
             if type(name) ~= "string" or type(text) ~= "string" or not text:match("^[%d,]+|[%d,]+$") then return false end
         end
     end
+    if data.wn ~= nil then
+        if type(data.wn) ~= "table" then return false end
+        for name, ids in pairs(data.wn) do
+            if type(name) ~= "string" or type(ids) ~= "string" or not ids:match("^[%d,]+$") then return false end
+        end
+    end
     if data.m ~= nil then
         if type(data.m) ~= "table" then return false end
         for alt, main in pairs(data.m) do
@@ -274,7 +322,7 @@ AF.Comm:On("SNAP", function(sender, data)
     local current = AF.db.snapshot
     if current and current.t >= data.t then return end
     AF.db.snapshot = { by = sender, t = data.t, w = data.w, s = data.s, sd = data.sd, m = data.m,
-        g = type(data.g) == "table" and data.g or nil }
+        g = type(data.g) == "table" and data.g or nil, wn = data.wn }
     AF:Fire("STANDINGS_UPDATED")
 end)
 

@@ -86,14 +86,21 @@ local function EffortTooltip(owner, name, member)
         local r, g, b = Theme.Accent()
         GameTooltip:AddDoubleLine("Effort (4 weeks)", member.effort, r, g, b, r, g, b)
     end
+    -- Officers: from the ledger. Everyone else: when the guild shows wins to all.
+    local wins = AF.Loot:WonThisWeek(name)
+    if #wins > 0 then
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Won this week", 1, 1, 1)
+        for _, link in ipairs(wins) do GameTooltip:AddLine(link) end
+    end
 end
 
 -------------------------------------------------------------------------------
 --  Main window: tabs
 -------------------------------------------------------------------------------
 local main
-local Effort, Me, Rules, LootTab, Log, BankTab, Options, WishTab, CraftTab, AttuneTab, LayerTab =
-    {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}
+local Effort, Me, Rules, LootTab, Log, BankTab, Options, WishTab, CraftTab, AttuneTab, LayerTab, PrioTab =
+    {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}
 
 local SIDEBAR_W = 150
 local CONTENT_W = 480
@@ -110,6 +117,7 @@ local NAV = {
     { page = 10, label = "Attunements", icon = "attune", feature = "attune" },
     { page = 11, label = "Layers", icon = "layers", feature = "layers" },
     { page = 4, label = "Loot history", icon = "loot", officer = true },
+    { page = 12, label = "Priorities", icon = "loot", officer = true, feature = "lootPrio" },
     { page = 5, label = "Log", icon = "log", officer = true },
     { page = 7, label = "Options", icon = "options", officer = true },
 }
@@ -122,7 +130,7 @@ end
 local function CreateMain()
     main = Theme.Window("GMSMain", "", SIDEBAR_W + CONTENT_W, 584)
     main.panels = {}
-    for i, page in ipairs({ Effort, Me, Rules, LootTab, Log, BankTab, Options, WishTab, CraftTab, AttuneTab, LayerTab }) do
+    for i, page in ipairs({ Effort, Me, Rules, LootTab, Log, BankTab, Options, WishTab, CraftTab, AttuneTab, LayerTab, PrioTab }) do
         local panel = CreateFrame("Frame", nil, main)
         panel:SetPoint("TOPLEFT", SIDEBAR_W, -25)
         panel:SetPoint("BOTTOMRIGHT")
@@ -172,6 +180,12 @@ function UI:ToggleOptions() self:ShowMain(7) end
 function UI:ShowBank() self:ShowMain(6) end
 function UI:ShowLog() self:ShowMain(5) end
 function UI:ShowLootHistory() self:ShowMain(4) end
+
+-- The Priorities page, with an item ready to edit.
+function UI:ShowPriorities(link)
+    self:ShowMain(12)
+    if link then PrioTab:Edit(C_Item.GetItemInfoInstant(link)) end
+end
 function UI:ShowMe() self:ShowMain(2) end
 function UI:ShowRules() self:ShowMain(3) end
 function UI:ShowWishlist() self:ShowMain(8) end
@@ -486,6 +500,8 @@ function Me:Refresh()
         table.insert(notes, ("Your client has counted %s honor; officers have %s so far. It's sent every few minutes."):format(
             BreakUpLargeNumbers(myHonor), BreakUpLargeNumbers(now.honor)))
     end
+    local wins = AF.Loot:WonThisWeek(name)
+    if #wins > 0 then table.insert(notes, "Won this week: " .. table.concat(wins, ", ")) end
     if not AF.Ledger:CanRecord() then
         table.insert(notes, "Your numbers update when an officer is online. See the Rules tab for how each part is scored.")
     end
@@ -571,6 +587,22 @@ end
 local RESPONSE_ROLE = { ["Main spec"] = "ms", ["Off spec"] = "os", ["Pass"] = "pass" }
 local RESPONSE_SHORT = { ["Main spec"] = "Main", ["Off spec"] = "Off", ["Pass"] = "Pass" }
 local historyMode, historyWeeks = "items", 4
+-- Loot history ranges; past 8 weeks the awards come from the archive.
+local HISTORY_RANGES = { { 4, "4 weeks" }, { 8, "8 weeks" }, { 13, "3 months" }, { math.huge, "All" } }
+
+local function RangeText(weeks)
+    for _, r in ipairs(HISTORY_RANGES) do
+        if r[1] == weeks then return r[2] end
+    end
+    return weeks .. " weeks"
+end
+
+-- "this week", "1 week ago", "3 weeks ago"
+function UI.WeeksAgo(week)
+    local ago = AF.Standings.CurrentWeek() - week
+    if ago <= 0 then return "this week" end
+    return ago == 1 and "1 week ago" or ("%d weeks ago"):format(ago)
+end
 local playerSort, playerSortDesc = "items", true
 
 local function ItemName(link)
@@ -606,20 +638,33 @@ function LootTab:Build(panel)
     self.playersButton = Theme.Button(panel, "Players", 64, 22)
     self.playersButton:SetPoint("LEFT", self.itemsButton, "RIGHT", 4, 0)
     self.playersButton:SetScript("OnClick", function() historyMode = "players"; self:Refresh() end)
-    self.range = Theme.Check(panel, "8 weeks", historyWeeks == 8, function(on)
-        historyWeeks = on and 8 or 4
+    -- Click to step through the ranges.
+    self.range = Theme.Button(panel, RangeText(historyWeeks), 80, 22)
+    self.range:SetPoint("LEFT", self.playersButton, "RIGHT", 12, 0)
+    self.range:SetScript("OnClick", function()
+        local index = 1
+        for i, r in ipairs(HISTORY_RANGES) do
+            if r[1] == historyWeeks then index = i end
+        end
+        historyWeeks = HISTORY_RANGES[index % #HISTORY_RANGES + 1][1]
+        self.range.label:SetText(RangeText(historyWeeks))
         self:Refresh()
     end)
-    self.range:SetPoint("LEFT", self.playersButton, "RIGHT", 12, 0)
 
     self.items = Theme.List(panel, {
         left = 14, top = -42, rows = 16, rowHeight = 23,
         emptyText = "No items won in this period.",
         columns = {
-            { key = "when", label = "When", width = 70 },
-            { key = "player", label = "Player", width = 120 },
-            { key = "item", label = "Item", width = 196, widget = ItemCell },
+            { key = "when", label = "When", width = 62 },
+            { key = "player", label = "Player", width = 106 },
+            { key = "item", label = "Item", width = 166, widget = function(row)
+                local f = ItemCell(row)
+                f:SetWidth(160)
+                f.text:SetWidth(136)
+                return f
+            end },
             { key = "response", label = "Response", width = 60, widget = function(row) return Theme.Pill(row) end },
+            { key = "reason", label = "Reason", width = 56 },
         },
         render = function(row, e)
             row.cells.when:SetText(date("%m-%d", e.t))
@@ -630,6 +675,8 @@ function LootTab:Build(panel)
             row.cells.item.text:SetText(e.l)
             local role = RESPONSE_ROLE[e.r]
             if role then row.cells.response:Set(RESPONSE_SHORT[e.r], role) else row.cells.response:Set(nil) end
+            row.cells.reason:SetText(AF.Loot.ReasonText(e.y) or "")
+            row.cells.reason:SetTextColor(unpack(C.dim))
         end,
         onRowEnter = function(row, e)
             GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
@@ -637,13 +684,19 @@ function LootTab:Build(panel)
             GameTooltip:AddDoubleLine("Won by", AF:ShortName(e.n), 0.8, 0.8, 0.8, 1, 1, 1)
             GameTooltip:AddDoubleLine("When", date("%Y-%m-%d %H:%M", e.t), 0.8, 0.8, 0.8, 1, 1, 1)
             GameTooltip:AddDoubleLine("Response", e.r or "-", 0.8, 0.8, 0.8, 1, 1, 1)
+            GameTooltip:AddDoubleLine("Reason", AF.Loot.ReasonText(e.y) or "-", 0.8, 0.8, 0.8, 1, 1, 1)
             GameTooltip:AddDoubleLine("Awarded by", AF:ShortName(e.by), 0.8, 0.8, 0.8, 1, 1, 1)
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine(e.test and "Test data: gone after /reload" or "Click to remove (a wrong award)", 0.55, 0.55, 0.57)
+            if e.archived then
+                GameTooltip:AddLine("Archived: older than the ledger, so it can't be removed", 0.55, 0.55, 0.57)
+            else
+                GameTooltip:AddLine(e.test and "Test data: gone after /reload" or "Click to remove (a wrong award)", 0.55, 0.55, 0.57)
+            end
             GameTooltip:Show()
         end,
         onRowClick = function(e)
             if e.test then return AF:Print("That's test data from /gms test; it's gone after /reload.") end
+            if e.archived then return AF:Print("That award is archived (older than the ledger), so it can't be removed.") end
             StaticPopup_Show("GMS_VOID", UI.DescribeEvent(e), nil, { id = e.id })
         end,
     })
@@ -681,7 +734,9 @@ function LootTab:Build(panel)
             GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
             GameTooltip:AddLine(AF:ShortName(p.name), ClassColor(p.classFile or ClassOf(p.name, AF.Standings:All()[p.name])))
             for _, e in ipairs(p.wins) do
-                GameTooltip:AddDoubleLine(e.l, date("%m-%d", e.t) .. "  " .. (RESPONSE_SHORT[e.r] or "-"), 1, 1, 1, 0.6, 0.6, 0.6)
+                local why = AF.Loot.ReasonText(e.y)
+                GameTooltip:AddDoubleLine(e.l, date("%m-%d", e.t) .. "  " .. (RESPONSE_SHORT[e.r] or "-") .. (why and (", " .. why) or ""),
+                    1, 1, 1, 0.6, 0.6, 0.6)
             end
             GameTooltip:Show()
         end,
@@ -747,7 +802,8 @@ function LootTab:Refresh()
         self.players:SetData(list)
         self.players:MarkSorted(playerSort == "t" and "last" or playerSort)
     end
-    self.info:SetText(("%d items won in the last %d weeks%s%s"):format(#wins, historyWeeks,
+    local period = historyWeeks == math.huge and "in all" or ("in the last %d weeks"):format(historyWeeks)
+    self.info:SetText(("%d items won %s%s%s"):format(#wins, period,
         filter ~= "" and " (filtered)" or "", AF.Loot:HasTestWins() and "  ·  includes test data until /reload" or ""))
 end
 
@@ -1025,10 +1081,115 @@ end
 if type(ChatEdit_InsertLink) == "function" then
     hooksecurefunc("ChatEdit_InsertLink", function(link)
         if type(link) ~= "string" then return end
-        for _, box in ipairs({ BankTab.itemBox, WishTab.itemBox, CraftTab.itemBox, AttuneTab.itemBox }) do
+        for _, box in ipairs({ BankTab.itemBox, WishTab.itemBox, CraftTab.itemBox, AttuneTab.itemBox, PrioTab.itemBox }) do
             if box and box:IsVisible() and box:HasFocus() then box:SetText(link) end
         end
     end)
+end
+
+-------------------------------------------------------------------------------
+--  Priorities tab (officers): who should get an item first, per item
+-------------------------------------------------------------------------------
+local function Hint(box, text)
+    local hint = Theme.Text(box, 11, C.dim)
+    hint:SetPoint("LEFT", 8, 0)
+    hint:SetText(text)
+    box:SetScript("OnTextChanged", function(self) hint:SetShown(self:GetText() == "") end)
+    return hint
+end
+
+function PrioTab:Build(panel)
+    self.panel = panel
+    local heading = Theme.Text(panel, 12, C.bright)
+    heading:SetPoint("TOPLEFT", 16, -16)
+    heading:SetText("Loot priorities")
+    local info = Theme.Text(panel, 11, C.dim)
+    info:SetPoint("TOPLEFT", 16, -36)
+    info:SetWidth(448)
+    info:SetWordWrap(true)
+    info:SetText("Who should get an item first, e.g. \"Warrior tank > Rogue\". Shown in the loot window and in item tooltips for officers. It never decides anything.")
+
+    self.itemBox = Theme.EditBox(panel, 140)
+    self.itemBox:SetPoint("TOPLEFT", 16, -76)
+    Hint(self.itemBox, "Shift-click an item")
+    self.orderBox = Theme.EditBox(panel, 130)
+    self.orderBox:SetPoint("LEFT", self.itemBox, "RIGHT", 6, 0)
+    self.orderBox:SetMaxLetters(100)
+    Hint(self.orderBox, "Warrior tank > Rogue")
+    self.noteBox = Theme.EditBox(panel, 100)
+    self.noteBox:SetPoint("LEFT", self.orderBox, "RIGHT", 6, 0)
+    self.noteBox:SetMaxLetters(100)
+    Hint(self.noteBox, "Note")
+    local save = Theme.Button(panel, "Save", 54)
+    save:SetPoint("TOPRIGHT", -16, -76)
+    save:SetScript("OnClick", function()
+        local ok, err = AF.Config:SetPrio(ItemIDFrom(self.itemBox:GetText()), self.orderBox:GetText(), self.noteBox:GetText())
+        if not ok then return AF:Print(err) end
+        for _, box in ipairs({ self.itemBox, self.orderBox, self.noteBox }) do
+            box:SetText("")
+            box:ClearFocus()
+        end
+    end)
+
+    self.list = Theme.List(panel, {
+        left = 14, top = -112, rows = 16, rowHeight = 24,
+        emptyText = "No priorities yet. Shift-click an item into the box above.",
+        columns = {
+            { key = "item", label = "Item", width = 160, widget = function(row)
+                local f = ItemCell(row)
+                f:SetWidth(154)
+                f.text:SetWidth(130)
+                return f
+            end },
+            { key = "order", label = "Priority", width = 140 },
+            { key = "note", label = "Note", width = 110 },
+            { key = "remove", label = "", width = 34, justify = "RIGHT", widget = function(row)
+                local b = Theme.Button(row, "x", 20, 18)
+                b:SetScript("OnClick", function()
+                    local ok, err = AF.Config:SetPrio(row.data.id, nil, nil)
+                    if not ok then AF:Print(err) end
+                end)
+                return b
+            end },
+        },
+        render = function(row, d)
+            local link = select(2, C_Item.GetItemInfo(d.id))
+            row.cells.item.icon:SetItem(link or ("item:" .. d.id))
+            row.cells.item.text:SetText(link or ("item " .. d.id))
+            row.cells.order:SetText(d.o or "-")
+            row.cells.note:SetText(d.t or "")
+            row.cells.note:SetTextColor(unpack(C.dim))
+            row.cells.remove:SetShown(AF.Config:CanEdit())
+        end,
+        onRowEnter = function(row, d)
+            GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
+            GameTooltip:SetHyperlink("item:" .. d.id)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Click to edit", 0.55, 0.55, 0.57)
+            GameTooltip:Show()
+        end,
+        onRowClick = function(d) self:Edit(d.id) end,
+    })
+end
+
+-- Puts an item's priority in the boxes to change it.
+function PrioTab:Edit(itemID)
+    if not self.panel or not itemID then return end
+    local p = AF.Config:Get("prios")[itemID] or {}
+    self.itemBox:SetText(select(2, C_Item.GetItemInfo(itemID)) or tostring(itemID))
+    self.orderBox:SetText(p.o or "")
+    self.noteBox:SetText(p.t or "")
+    self.orderBox:SetFocus()
+end
+
+function PrioTab:Refresh()
+    if not self.panel then return end
+    local data = {}
+    for id, p in pairs(AF.Config:Get("prios")) do
+        table.insert(data, { id = id, o = p.o, t = p.t, name = C_Item.GetItemInfo(id) or tostring(id) })
+    end
+    table.sort(data, function(a, b) return a.name < b.name end)
+    self.list:SetData(data)
 end
 
 -------------------------------------------------------------------------------
@@ -1762,6 +1923,17 @@ local function RefreshLoot()
     end
     loot.header.icon:SetItem(session.link)
     loot.header.link:SetText(session.link)
+    local lines = {}
+    local prio = AF.Loot.Priority(session.link)
+    if prio then
+        if prio.o then table.insert(lines, "|cffff9933Priority:|r " .. prio.o) end
+        if prio.t then table.insert(lines, prio.t) end
+    end
+    if AF.Loot.IsToken(session.link) then
+        table.insert(lines, "|cff4fe0a6Token for:|r " .. table.concat(AF.Loot.TokenClasses(session.link), ", "))
+    end
+    loot.header.prio:SetText(table.concat(lines, "\n"))
+    loot.header.prioButton:SetShown(AF.Config:CanEdit() and AF.Config:Feature("lootPrio"))
     if session.awarded then
         local trade = ""
         if session.byTrade then
@@ -1773,7 +1945,8 @@ local function RefreshLoot()
                 trade = "  ·  holder unknown (nobody with the addon has it)"
             end
         end
-        local purpose = session.purpose and (" (%s)"):format(session.purpose) or ""
+        local why = AF.Loot.ReasonText(session.reason)
+        local purpose = (session.purpose or why) and (" (%s)"):format(session.purpose or why) or ""
         loot.header.info:SetText("Awarded to " .. AF:ShortName(session.awarded) .. purpose .. trade)
     else
         local answered, total = 0, #AF:GroupMembers()
@@ -1817,6 +1990,62 @@ local function EquippedWidget(row)
     return f
 end
 
+-- Award with an optional reason (or the plain yes/no popup when reasons are off).
+local award
+
+local function MarkReason()
+    for key, b in pairs(award.reasons) do
+        if key == award.reason then b:SetBackdropBorderColor(Theme.Accent()) else b:SetBackdropBorderColor(unpack(C.buttonBorder)) end
+    end
+end
+
+local function CreateAward()
+    award = Theme.Window("GMSAward", "Award", 360, 156)
+    award.text = Theme.Text(award, 12)
+    award.text:SetPoint("TOPLEFT", 16, -36)
+    award.text:SetWidth(328)
+    award.text:SetWordWrap(true)
+    local label = Theme.Text(award, 11, C.dim)
+    label:SetPoint("TOPLEFT", 16, -70)
+    label:SetText("Reason (optional)")
+    award.reasons = {}
+    local x = 16
+    for _, r in ipairs(AF.Loot.REASONS) do
+        local b = Theme.Button(award, r.text, 62, 22)
+        b:SetPoint("TOPLEFT", x, -86)
+        b:SetScript("OnClick", function()
+            award.reason = award.reason ~= r.key and r.key or nil
+            MarkReason()
+        end)
+        award.reasons[r.key] = b
+        x = x + 66
+    end
+    local ok = Theme.Button(award, "Award", 90, 24)
+    ok:SetPoint("BOTTOMRIGHT", -14, 12)
+    ok:SetScript("OnClick", function()
+        local data = award.data
+        award:Hide()
+        if not data then return end
+        local result, err = AF.Loot:Award(data.sid, data.name, nil, award.reason)
+        if not result then AF:Print(err) end
+    end)
+    local cancel = Theme.Button(award, CANCEL or "Cancel", 90, 24)
+    cancel:SetPoint("RIGHT", ok, "LEFT", -8, 0)
+    cancel:SetScript("OnClick", function() award:Hide() end)
+end
+
+local function AskAward(session, name)
+    if not AF.Config:Feature("awardReasons") then
+        return StaticPopup_Show("GMS_AWARD", session.link, AF:ShortName(name), { sid = session.sid, name = name })
+    end
+    if not award then CreateAward() end
+    award.data = { sid = session.sid, name = name }
+    award.reason = nil
+    MarkReason()
+    award.text:SetText(("Award %s to %s?"):format(session.link, AF:ShortName(name)))
+    award:Show()
+end
+
 local function CreateLoot()
     loot = Theme.Window("GMSLoot", "Loot", 680, 440)
 
@@ -1844,6 +2073,22 @@ local function CreateLoot()
     header.link:SetPoint("TOPLEFT", header.icon, "TOPRIGHT", 10, -3)
     header.info = Theme.Text(header, 11, C.dim)
     header.info:SetPoint("BOTTOMLEFT", header.icon, "BOTTOMRIGHT", 10, 3)
+    header.link:SetWidth(290)
+    header.link:SetWordWrap(false)
+    -- The item's loot priority and, for tokens, who they're for.
+    header.prioButton = Theme.Button(header, "Priority", 66, 20)
+    header.prioButton:SetPoint("TOPRIGHT", 0, 0)
+    header.prioButton:SetScript("OnClick", function()
+        local session = select(2, AF.Loot:Sessions())[selectedSid]
+        if session then UI:ShowPriorities(session.link) end
+    end)
+    header.prio = Theme.Text(header, 11, C.text)
+    header.prio:SetPoint("TOPRIGHT", -74, -1)
+    header.prio:SetWidth(214)
+    header.prio:SetJustifyH("RIGHT")
+    header.prio:SetJustifyV("TOP")
+    header.prio:SetWordWrap(true)
+    if header.prio.SetMaxLines then header.prio:SetMaxLines(3) end
     loot.header = header
 
     loot.list = Theme.List(loot, {
@@ -1890,6 +2135,8 @@ local function CreateLoot()
             row.cells.equipped:Set(c.equipped, session and session.link, c.response ~= nil)
             local parts = {}
             if c.cantUse then table.insert(parts, "|cffff5555can't use|r") end
+            if c.prio then table.insert(parts, ("|cffff9933prio %d|r"):format(c.prio)) end
+            if c.sets then table.insert(parts, ("|cff4fe0a6wears %d pc|r"):format(c.sets[1].n)) end
             if c.set then
                 local total = session and select(2, AF.Loot.SetInfo(session.link))
                 table.insert(parts, ("|cff4fe0a6%s set|r"):format(total and (c.set .. "/" .. total) or (c.set .. " pc")))
@@ -1927,6 +2174,14 @@ local function CreateLoot()
                 GameTooltip:AddLine(("%s%d piece%s of %s equipped"):format(total and (total .. " in the set: ") or "", c.set,
                     c.set == 1 and "" or "s", setName or "this set"), 0.31, 0.88, 0.65, true)
             end
+            if c.prio then
+                GameTooltip:AddLine(("#%d in this item's loot priority"):format(c.prio), 1, 0.6, 0.2)
+            end
+            for _, s in ipairs(c.sets or {}) do
+                local setName, total = AF.Loot.SetInfoByID(s.id)
+                GameTooltip:AddLine(("Wears %d%s of %s"):format(s.n, total and ("/" .. total) or "", setName or ("set " .. s.id)),
+                    0.31, 0.88, 0.65, true)
+            end
             if c.wish then
                 GameTooltip:AddLine(("#%d on their wishlist"):format(c.wish), 1, 0.82, 0.33)
             end
@@ -1944,6 +2199,12 @@ local function CreateLoot()
                     end
                 end
                 GameTooltip:AddLine(("Won in the last 4 weeks: %d"):format(recent), 0.8, 0.8, 0.8)
+                for _, e in ipairs(AF.Loot:RecentWins(math.huge)) do      -- newest first
+                    if not AF.Ledger.FOR_GUILD[e.r] and AF.Standings:MainOf(e.n) == AF.Standings:MainOf(c.name) then
+                        GameTooltip:AddLine(("Last item: %s, %s"):format(e.l, UI.WeeksAgo(e.w)), 0.8, 0.8, 0.8)
+                        break
+                    end
+                end
             end
             if not c.member then GameTooltip:AddLine("Not in the guild", 0.55, 0.55, 0.57) end
             if #c.voters > 0 then
@@ -1966,7 +2227,7 @@ local function CreateLoot()
             if not session then return end
             if session.awarded then return AF:Printf("Already awarded to %s.", AF:ShortName(session.awarded)) end
             if session.authority ~= AF.playerName then return AF.Loot:Vote(session.sid, c.name) end
-            StaticPopup_Show("GMS_AWARD", session.link, AF:ShortName(c.name), { sid = session.sid, name = c.name })
+            AskAward(session, c.name)
         end,
     })
 
@@ -2251,6 +2512,8 @@ AF:On("LOOT_UPDATED", function()
 end)
 AF:On("CONFIG_UPDATED", function()
     RefreshAll()
+    RefreshNav()
+    if Visible(PrioTab) then PrioTab:Refresh() end
     if Visible(Options) then Options:Refresh() end
     if Visible(BankTab) then BankTab:Refresh() end
     if Visible(Rules) then Rules:Refresh() end
@@ -2666,7 +2929,7 @@ local function RefreshSetup()
 end
 
 local function CreateSetup()
-    setup = Theme.Window("GMSSetup", "Guild setup", 460, 530, 40)
+    setup = Theme.Window("GMSSetup", "Guild setup", 460, 640, 40)
     local y = -36
     local function Heading(text)
         local h = Theme.Label(setup, text)

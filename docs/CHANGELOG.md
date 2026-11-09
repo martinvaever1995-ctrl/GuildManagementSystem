@@ -1,5 +1,39 @@
 # Guild Management System
 
+## v3.3.0
+
+### Long-term history
+- **Weeks are kept:** weeks no longer disappear after 8 weeks. Officers keep a summary of every
+  older week: everyone's points per category, every award and the wanted items deposited.
+  Officers swap these weeks, so they all have the same ones.
+- **Loot history** goes back 3 months or all the way. The loot window shows each player's last
+  item and how many weeks ago they got it.
+- **Bank goals** keep counting deposits older than 8 weeks, so they no longer go backwards.
+
+### Loot council
+- **Loot priorities:** officers set who should get an item first ("Warrior tank > Rogue") on the
+  new Priorities page or with the loot window's Priority button. The loot window shows it and
+  marks matching players; officers see it in item tooltips.
+- **Award reasons:** pick Upgrade, BiS, Off spec, Alt or Other when awarding. It's in the raid
+  announcement and the loot history.
+- **Tier tokens:** the loot window shows which classes a token is for and how many set pieces
+  each player wears.
+- **Wins for everyone:** a guild setup option (off by default) shows everyone what was won this
+  week.
+- All four can be switched off in guild setup.
+
+### For officers
+- **`/gms export web`:** the guild's effort and loot history as JSON, for a website or a
+  Discord bot. `/gms archive` shows what's kept.
+- **`/gms selftest`:** a report to copy and send us when something looks wrong.
+
+### Fixes
+- `/gms help` showed "bankonor" and "addemove" instead of "bank|honor" and "add|remove".
+
+### Before you update
+- Officers first: an officer on an older version can wipe the loot priorities and the new
+  guild setup switches when they save the effort rules.
+
 ## v3.2.3
 
 ### Fixed

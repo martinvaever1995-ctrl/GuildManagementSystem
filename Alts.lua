@@ -71,6 +71,17 @@ function Alts:Report()
     AF.Comm:Send("LINK", { n = AF.playerName, m = main, at = chosenAt }, "GUILD")
 end
 
+-- Whether officers have this character's main (for /gms selftest).
+function Alts:LinkStatus()
+    local db = Account()
+    if not db.mainChosenAt then return "no main chosen yet" end
+    local main = self:ChosenMain()
+    if AF.Ledger:CanRecord() then return main .. " (officer: recorded directly)" end
+    local acked = db.linkAcked and db.linkAcked[AF.playerName]
+    local confirmed = acked and acked.m == main and acked.at == db.mainChosenAt
+    return main .. (confirmed and " (confirmed)" or " (not confirmed yet)")
+end
+
 -- Makes this character (or the named one on this account) the account's main.
 function Alts:SetMain(name)
     local db = Account()

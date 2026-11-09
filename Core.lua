@@ -5,8 +5,8 @@
 local ADDON_NAME, AF = ...
 _G.GuildManagementSystem = AF
 
-AF.VERSION = 30203          -- major * 10000 + minor * 100 + patch; bump with ## Version
-AF.VERSION_STRING = "3.2.3"
+AF.VERSION = 30300          -- major * 10000 + minor * 100 + patch; bump with ## Version
+AF.VERSION_STRING = "3.3.0"
 AF.DISCORD = "https://discord.gg/U4UCtfRgmE"
 AF.PREFIX = "GuildMgmtSys"  -- addon message prefix (max 16 chars)
 AF.PREFIX_BULK = "GuildMgmtSysBk"   -- the slow lane for large data (Comm.lua)
@@ -383,40 +383,48 @@ AF:RegisterEvent("PLAYER_ENTERING_WORLD", function()
 end)
 
 -- What the addon thinks of you; for when officer checks or names look wrong.
-function AF:Debug()
+-- Returns the lines; /gms debug prints them and /gms selftest includes them.
+function AF:DebugLines()
+    local lines = {}
+    local function Add(fmt, ...) table.insert(lines, fmt:format(...)) end
     local _, rankName, rankIndex = GetGuildInfo("player")
     local member = self.Standings:All()[self.playerName]
     local count = 0
     for _ in pairs(self.Standings:All()) do count = count + 1 end
-    self:Printf("You: %s | realm: %s / %s", tostring(self.playerName), tostring(GetNormalizedRealmName()), tostring(GetRealmName()))
+    Add("You: %s | realm: %s / %s", tostring(self.playerName), tostring(GetNormalizedRealmName()), tostring(GetRealmName()))
     local prefs = self.db.prefs
-    self:Printf("Look: saved %s | loaded %s | EllesmereUI: %s", tostring(prefs and prefs.style or "modern"),
+    Add("Look: saved %s | loaded %s | EllesmereUI: %s", tostring(prefs and prefs.style or "modern"),
         self.Theme.IsClassic() and "classic" or "modern", EllesmereUI and "yes" or "no")
-    self:Printf("Guild window tab: %s", self.UI.GuildTabStatus())
+    Add("Guild window tab: %s", self.UI.GuildTabStatus())
     local layerMap, layerId, layerZone = self.Layers:Own()
-    self:Printf("Layer: %s, map %s, ID %s | guild members known: %d", tostring(layerZone), tostring(layerMap),
+    Add("Layer: %s, map %s, ID %s | guild members known: %d", tostring(layerZone), tostring(layerMap),
         tostring(layerId), #self.Layers:List())
-    self:Printf("Guild rank: %s (index %s) | GM: %s | officer ranks 0-%d",
+    Add("Guild rank: %s (index %s) | GM: %s | officer ranks 0-%d",
         tostring(rankName), tostring(rankIndex), tostring(self:IsGM()), self.Config:Get("officerRank"))
     local guildRaid, canRoll, rollLines = self.GuildLoot.Status()
-    self:Printf("Guild loot: guild raid now: %s | can roll by addon: %s | roll lines understood: %d of 3",
+    Add("Guild loot: guild raid now: %s | can roll by addon: %s | roll lines understood: %d of 3",
         guildRaid and "yes" or "no", canRoll and "yes" or "NO", rollLines)
     local h = self.Honor.ApiReport()
-    self:Printf("Honor: this week %d (from %s) | weekly stats: %s | honor currency: %s | inspect honor: %s (event: %s)",
+    Add("Honor: this week %d (from %s) | weekly stats: %s | honor currency: %s | inspect honor: %s (event: %s)",
         h.honor, h.source, h.weeklyStats and "yes" or "no", tostring(h.currency),
         h.inspect and "YES" or "no", tostring(h.inspectEvent))
     local craftApi, craftWindow, myRecipes, crafters = self.Professions.ApiReport()
-    self:Printf("Professions: recipe API %s | enchanting window API: %s | your recipes: %d | characters known: %d",
+    Add("Professions: recipe API %s | enchanting window API: %s | your recipes: %d | characters known: %d",
         craftApi, craftWindow and "yes" or "no", myRecipes, crafters)
     local bankApi, interaction, pendingDeposits = self.Bank.ApiReport()
-    self:Printf("Guild bank API: %s | bank window event: %s | your unconfirmed deposit reports: %d",
+    Add("Guild bank API: %s | bank window event: %s | your unconfirmed deposit reports: %d",
         bankApi, interaction and "interaction manager" or "GUILDBANKFRAME", pendingDeposits)
-    self:Printf("Roster: %d members | you found in roster: %s | officer: %s",
+    Add("Roster: %d members | you found in roster: %s | officer: %s",
         count, member and ("yes, rank " .. member.rankIndex) or "NO", tostring(self.Ledger:CanRecord()))
     if not member then
         local sample = next(self.Standings:All())
-        self:Printf("Example roster name: %s", tostring(sample))
+        Add("Example roster name: %s", tostring(sample))
     end
+    return lines
+end
+
+function AF:Debug()
+    for _, line in ipairs(self:DebugLines()) do self:Print(line) end
 end
 
 -------------------------------------------------------------------------------
@@ -455,6 +463,10 @@ local HELP = {
     "/gms versions (or /gms check) - who in your group has the addon and which version, with durability, flasks / elixirs and range",
     "/gms options - effort rules (officers edit, everyone can view); /gms config prints them",
     "/gms export, /gms import - copy the ledger out as text / merge a copy back in (officers)",
+    "/gms export web - the archive and this ledger as JSON for a website or Discord bot (officers)",
+    "/gms archive - weeks kept after they leave the ledger; /gms archive test checks it now (officers)",
+    "/gms debug - what the addon can see on this client",
+    "/gms selftest - a report to copy and send us when something looks wrong",
 }
 
 -- Finds a guild member's full name from what the user typed ("bob" -> "Bob-Realm").
@@ -486,7 +498,7 @@ end
 local commands = {}
 
 commands.help = function()
-    for _, line in ipairs(HELP) do AF:Print(line) end
+    for _, line in ipairs(HELP) do AF:Print((line:gsub("|", "||"))) end   -- a bare | starts a chat code
 end
 
 commands.loot = function() AF.UI:ToggleLootWindow() end
@@ -503,7 +515,7 @@ commands.adjust = function(args)
     local who, category, points, reason = args:match("^(%S+)%s+(%a+)%s+([%+%-]?%d+)%s*(.*)$")
     category = category and category:lower()
     if not who or not AF.Standings.CATEGORY_TEXT[category] then
-        return AF:Print("Usage: /gms adjust <name> <raid|bank|honor|dungeon> <+/- points this week> [reason]  (0 removes the correction)")
+        return AF:Print("Usage: /gms adjust <name> <raid||bank||honor||dungeon> <+/- points this week> [reason]  (0 removes the correction)")
     end
     local name, err = AF:ResolveName(who)
     if not name then return AF:Print(err) end
@@ -597,6 +609,78 @@ commands.final = function() AF.Dungeons:ToggleFinal() end
 
 commands.debug = function() AF:Debug() end
 
+-- Everything an officer can send us when something looks wrong. Reads only.
+local function Ago(seconds)
+    if seconds < 3600 then return ("%d min"):format(seconds / 60) end
+    if seconds < 172800 then return ("%.1f h"):format(seconds / 3600) end
+    return ("%.1f days"):format(seconds / 86400)
+end
+
+local function Count(t)
+    local n = 0
+    for _ in pairs(t or {}) do n = n + 1 end
+    return n
+end
+
+function AF:Selftest()
+    local lines = {}
+    local function Add(fmt, ...) table.insert(lines, fmt:format(...)) end
+    Add("GMS selftest %s, %s", self.VERSION_STRING, date("%Y-%m-%d %H:%M"))
+    local _, build, _, interface = GetBuildInfo()
+    Add("Client: %s (interface %s) | look: %s", tostring(build), tostring(interface), self.Theme.IsClassic() and "classic" or "modern")
+
+    local guild, rankName, rankIndex = GetGuildInfo("player")
+    local officer = self.Ledger:CanRecord()
+    Add("Guild: %s | rank: %s (index %s) | GM: %s | officer ranks 0-%d | officer: %s", tostring(guild), tostring(rankName),
+        tostring(rankIndex), tostring(self:IsGM()), self.Config:Get("officerRank"), tostring(officer))
+
+    local features = {}
+    for _, f in ipairs(self.Config.FEATURES) do
+        table.insert(features, f.key .. (self.Config:Feature(f.key) and " on" or " off"))
+    end
+    Add("Config: v%d | setup done: %s | caps: raid %d, bank %d, honor %d, dungeon %d", self.Config:Raw("version") or 0,
+        tostring(self.Config:Raw("setupDone")), self.Config:Get("raidMax"), self.Config:Get("bankMax"),
+        self.Config:Get("honorMax"), self.Config:Get("dungeonMax"))
+    Add("Features: %s", table.concat(features, ", "))
+
+    local byWeek, total, voids = self.Ledger:CountsByWeek()
+    local current = self.Standings.CurrentWeek()
+    local weeks = {}
+    local oldest = current
+    for w in pairs(byWeek) do oldest = math.min(oldest, w) end
+    for w = current + 1, oldest, -1 do
+        if byWeek[w] then table.insert(weeks, ("%s: %d"):format(w == current and "this week" or tostring(w - current), byWeek[w])) end
+    end
+    Add("Ledger: %d events, %d removals | week %d | by week: %s", total, voids, current,
+        #weeks > 0 and table.concat(weeks, ", ") or "none")
+
+    local archived, oldestArchived = self.Archive:Summary()
+    Add("Archive: %d weeks%s", archived, oldestArchived and (" | oldest: %d weeks ago"):format(current - oldestArchived) or "")
+
+    local by, at = self.Standings:SnapshotInfo()
+    if at then
+        Add("Snapshot: from %s, %s ago", tostring(by), Ago(math.max(0, GetServerTime() - at)))
+    else
+        Add("Snapshot: none")
+    end
+
+    local honor, acked = self.Honor.Pending()
+    Add("Waiting for an officer: deposits %d | dungeon runs %d | kill reports %d | honor %s | main link: %s",
+        Count(self.db.pendingDeposits), Count(self.db.pendingRuns), Count(self.db.pendingKills),
+        honor and ("%d (confirmed %d)"):format(honor, acked) or "?", self.Alts:LinkStatus())
+
+    table.insert(lines, "--- /gms debug")
+    for _, line in ipairs(self:DebugLines()) do table.insert(lines, line) end
+    return lines, total
+end
+
+commands.selftest = function()
+    local lines, total = AF:Selftest()
+    for i = 1, 3 do AF:Print(lines[i]) end
+    AF.UI:ShowTextWindow("GMS selftest", ("%d lines, %d ledger events. Press Ctrl+A, Ctrl+C and paste it to the GMS Discord (/gms discord)."):format(
+        #lines, total), table.concat(lines, "\n"))
+end
+
 commands.test = function(args)
     AF.Loot:StartTest(args:match("|c[^|]*|Hitem:.-|h|r"))
 end
@@ -606,10 +690,20 @@ commands.check = commands.versions
 commands.config = function() AF.Config:PrintConfig() end
 commands.options = function() AF.UI:ToggleOptions() end
 
-commands.export = function()
+commands.export = function(args)
     if not NeedOfficer() then return end
+    if args:lower() == "web" then
+        local text, weeks = AF.Archive:WebExport()
+        return AF.UI:ShowTextWindow("Web export", ("%d weeks as JSON for a website or Discord bot (docs/EXPORT.md). Ctrl+A, Ctrl+C."):format(weeks), text)
+    end
     local text, count = AF.Ledger:Export()
     AF.UI:ShowTextWindow("Ledger export", ("%d events. Press Ctrl+A, Ctrl+C and save it somewhere outside the game."):format(count), text)
+end
+
+commands.archive = function(args)
+    if not NeedOfficer() then return end
+    if args:lower() == "test" then return AF.Archive:Test() end
+    AF.Archive:PrintStatus()
 end
 
 commands.import = function()

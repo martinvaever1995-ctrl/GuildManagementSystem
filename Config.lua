@@ -21,6 +21,7 @@ local DEFAULTS = {
     goldPerPoint = 50,      -- guild bank: gold (or wanted-item gold value) per point
     wanted = {},            -- guild bank wanted list: itemID -> gold value per unit
     goals = {},             -- goals for wanted items: itemID -> { n = target count, since = server time }
+    prios = {},             -- loot priorities: itemID -> { o = "Warrior tank > Rogue", t = note }
     guildKillShare = 75,    -- % of the raid that must be guild members for a guild kill
     honorTarget = 5000,     -- weekly honor that gives the full honor score
     responseTimeout = 60,   -- seconds the loot popup stays up
@@ -43,6 +44,10 @@ Config.FEATURES = {
     { key = "attune", label = "Attunements", default = true },
     { key = "layers", label = "Layers: who in the guild is on which layer", default = true },
     { key = "guildLoot", label = "Guild loot: in guild raids raiders pass on Rare+, the leader needs", default = false },
+    { key = "lootPrio", label = "Loot priorities officers set per item", default = true },
+    { key = "awardReasons", label = "Award reasons (upgrade, BiS, off spec, alt)", default = true },
+    { key = "tokens", label = "Tier tokens: classes and the sets players wear", default = true },
+    { key = "winsPublic", label = "Show items won this week to everyone", default = false },
 }
 local FEATURE_DEFAULT = {}
 for _, f in ipairs(Config.FEATURES) do FEATURE_DEFAULT[f.key] = f.default end
@@ -63,6 +68,16 @@ Config.FIELDS = {
 }
 
 local cfg
+
+local PRIO_TEXT = 100       -- characters per priority order or note
+
+-- Officer-typed text for everyone's windows: no chat codes, trimmed, short.
+function Config.CleanText(text)
+    if type(text) ~= "string" then return nil end
+    text = text:gsub("|", ""):gsub("^%s+", ""):gsub("%s+$", "")
+    if text == "" then return nil end
+    return text:sub(1, PRIO_TEXT)
+end
 
 -- Fills anything missing (older saved config, or a newer default) and drops
 -- keys that no longer exist (v1's EP/GP settings) and malformed wanted entries.
@@ -102,6 +117,15 @@ local function Normalize(t)
     end
     for key, on in pairs(t.features) do
         if FEATURE_DEFAULT[key] == nil or type(on) ~= "boolean" then t.features[key] = nil end
+    end
+    for id, p in pairs(t.prios) do
+        local ok = type(id) == "number" and type(p) == "table"
+        if ok then
+            p.o = Config.CleanText(p.o)
+            p.t = Config.CleanText(p.t)
+            ok = p.o ~= nil or p.t ~= nil
+        end
+        if not ok then t.prios[id] = nil end
     end
     return t
 end
@@ -203,6 +227,14 @@ AF.Comm:On("CFG", function(sender, incoming)
         pendingReply = nil
     end
     if incoming.version <= cfg.version or not Config:IsOfficer(sender) then return end
+    -- An officer on an older version drops what it doesn't know (priorities, newer
+    -- switches) when it saves. Keep ours for anything it didn't send.
+    if incoming.prios == nil then incoming.prios = cfg.prios end
+    if type(incoming.features) == "table" then
+        for key, on in pairs(cfg.features) do
+            if incoming.features[key] == nil then incoming.features[key] = on end
+        end
+    end
     local fromGM = AF.Standings:All()[sender].rankIndex == 0
     local officerRank = cfg.officerRank
     AF.db.config = Normalize(incoming)
@@ -305,6 +337,16 @@ function Config:SetWanted(itemID, value, goal)
         local existing = cfg.goals[itemID]
         cfg.goals[itemID] = { n = math.floor(goal), since = existing and existing.since or GetServerTime() }
     end
+    self:Publish()
+    return true
+end
+
+-- Sets an item's loot priority (order and/or note); both empty removes it.
+function Config:SetPrio(itemID, order, note)
+    if not self:CanEdit() then return nil, "Only officers can change loot priorities." end
+    if type(itemID) ~= "number" then return nil, "Shift-click an item, or type its item ID." end
+    order, note = Config.CleanText(order), Config.CleanText(note)
+    cfg.prios[itemID] = (order or note) and { o = order, t = note } or nil
     self:Publish()
     return true
 end
