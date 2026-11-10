@@ -281,3 +281,18 @@ Setup: an officer, `/reload`, wait a minute (the first scan runs after the ledge
    achievement (once an officer is online). A new PvP rank or an honorable kill step likewise.
 7. Guild setup: "Announce new guild firsts" off: cards still show, no guild chat line.
    "Guild achievements" off: the tab disappears.
+
+## 25. Race hunt and PvP kills
+Setup: an officer, then a player of the other faction to kill (world PvP or a battleground).
+1. `/gms debug`: "Race hunt: none set | combat log: yes | player info: yes". If either says NO,
+   kills can't be counted on this client: stop and tell me.
+2. Get a killing blow on a player. `/gms debug` again: "your last killing blow on a player:
+   <race>" (e.g. Gnome).
+3. Achievements tab: "Killing blows on players: 1"; hover it: the per-race totals and you on top.
+   (Officers see it right away; raiders after the next officer snapshot, within a couple of
+   minutes.)
+4. Officer: Race hunt → pick a race, goal 5, Start. The line says "<Race> hunt: 0 / 5".
+   Killing blows on that race raise it (within ~2 minutes); hover: the leaderboard and "You".
+5. Reach the goal: the "Hunt: 5 <race>" achievement, with a card and the guild chat line.
+6. Race hunt → End the hunt: the line says "No race hunt right now"; a new hunt starts at 0.
+7. With small numbers to check: the per-race achievements start at 100; that's a later test.

@@ -25,6 +25,7 @@ local DEFAULTS = {
     recruit = {},           -- recruiter whisper templates: { { n = name, t = text with {player} etc. }, ... }
     needs = {},             -- classes the guild is looking for: classFile -> how many
     needsNote = "",         -- and a line about it ("2 healers for Molten Core")
+    hunt = {},              -- the race hunt: { k = key ("Gnome:<time set>"), r = race, g = goal }; empty: none
     guildKillShare = 75,    -- % of the raid that must be guild members for a guild kill
     honorTarget = 5000,     -- weekly honor that gives the full honor score
     responseTimeout = 60,   -- seconds the loot popup stays up
@@ -138,6 +139,12 @@ local function Normalize(t)
         if type(file) ~= "string" or type(n) ~= "number" or n < 1 then t.needs[file] = nil else t.needs[file] = math.min(99, math.floor(n)) end
     end
     t.needsNote = Config.CleanText(t.needsNote) or ""
+    local h = t.hunt
+    if not (type(h.k) == "string" and type(h.r) == "string" and type(h.g) == "number" and h.g >= 1) then
+        t.hunt = {}
+    else
+        h.g = math.min(1000000, math.floor(h.g))
+    end
     for id, p in pairs(t.prios) do
         local ok = type(id) == "number" and type(p) == "table"
         if ok then
@@ -252,6 +259,7 @@ AF.Comm:On("CFG", function(sender, incoming)
     if incoming.prios == nil then incoming.prios = cfg.prios end
     if incoming.recruit == nil then incoming.recruit = cfg.recruit end
     if incoming.needs == nil then incoming.needs, incoming.needsNote = cfg.needs, cfg.needsNote end
+    if incoming.hunt == nil then incoming.hunt = cfg.hunt end
     if type(incoming.features) == "table" then
         for key, on in pairs(cfg.features) do
             if incoming.features[key] == nil then incoming.features[key] = on end
@@ -358,6 +366,22 @@ function Config:SetWanted(itemID, value, goal)
     elseif goal then
         local existing = cfg.goals[itemID]
         cfg.goals[itemID] = { n = math.floor(goal), since = existing and existing.since or GetServerTime() }
+    end
+    self:Publish()
+    return true
+end
+
+-- Starts a race hunt (race: e.g. "Gnome", goal: killing blows), changes its goal, or
+-- ends it (race nil). A new race starts counting from 0.
+function Config:SetHunt(race, goal)
+    if not self:CanEdit() then return nil, "Only officers can set the race hunt." end
+    if race == nil then
+        cfg.hunt = {}
+    else
+        goal = tonumber(goal)
+        if not goal or goal < 1 then return nil, "Set a goal: how many killing blows." end
+        local key = cfg.hunt.r == race and cfg.hunt.k or (race .. ":" .. GetServerTime())
+        cfg.hunt = { k = key, r = race, g = math.floor(goal) }
     end
     self:Publish()
     return true

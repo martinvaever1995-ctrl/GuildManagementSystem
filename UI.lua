@@ -2779,6 +2779,83 @@ end)
 -------------------------------------------------------------------------------
 --  Achievements tab: guild firsts, earned or still open
 -------------------------------------------------------------------------------
+-- The race hunt window (officers): which race, and how many killing blows.
+local huntWindow
+
+local function CreateHunt()
+    huntWindow = Theme.Window("GMSHunt", "Race hunt", 320, 176)
+    local hint = Theme.Text(huntWindow, 11, C.dim)
+    hint:SetPoint("TOPLEFT", 16, -34)
+    hint:SetWidth(288)
+    hint:SetWordWrap(true)
+    hint:SetText("The guild counts its killing blows on players of this race. Reaching the goal is a guild achievement.")
+    local raceLabel = Theme.Text(huntWindow, 12)
+    raceLabel:SetPoint("TOPLEFT", 16, -76)
+    raceLabel:SetText("Race")
+    huntWindow.race = Theme.Button(huntWindow, "", 130, 22)
+    huntWindow.race:SetPoint("TOPLEFT", 80, -72)
+    huntWindow.race:SetScript("OnClick", function()
+        local races = AF.Hunt.EnemyRaces()
+        local index = 0
+        for i, r in ipairs(races) do
+            if r == huntWindow.chosen then index = i end
+        end
+        huntWindow.chosen = races[index % #races + 1]
+        huntWindow.race.label:SetText(AF.Hunt.RaceName(huntWindow.chosen))
+    end)
+    local goalLabel = Theme.Text(huntWindow, 12)
+    goalLabel:SetPoint("TOPLEFT", 16, -106)
+    goalLabel:SetText("Goal")
+    huntWindow.goal = Theme.EditBox(huntWindow, 70)
+    huntWindow.goal:SetPoint("TOPLEFT", 80, -102)
+    huntWindow.goal:SetNumeric(true)
+    huntWindow.goal:SetMaxLetters(6)
+    local unit = Theme.Text(huntWindow, 11, C.dim)
+    unit:SetPoint("LEFT", huntWindow.goal, "RIGHT", 6, 0)
+    unit:SetText("killing blows")
+    local save = Theme.Button(huntWindow, "Start / save", 110, 24)
+    save:SetPoint("BOTTOMRIGHT", -14, 12)
+    save:SetScript("OnClick", function()
+        local ok, err = AF.Config:SetHunt(huntWindow.chosen, huntWindow.goal:GetText())
+        if not ok then return AF:Print(err) end
+        huntWindow:Hide()
+    end)
+    huntWindow.stop = Theme.Button(huntWindow, "End the hunt", 110, 24)
+    huntWindow.stop:SetPoint("RIGHT", save, "LEFT", -8, 0)
+    huntWindow.stop:SetScript("OnClick", function()
+        local ok, err = AF.Config:SetHunt(nil)
+        if not ok then return AF:Print(err) end
+        huntWindow:Hide()
+    end)
+end
+
+function UI:ShowHunt()
+    if not huntWindow then CreateHunt() end
+    local h = AF.Hunt.Current()
+    huntWindow.chosen = h and h.r or AF.Hunt.EnemyRaces()[1]
+    huntWindow.race.label:SetText(AF.Hunt.RaceName(huntWindow.chosen))
+    huntWindow.goal:SetText(h and tostring(h.g) or "500")
+    huntWindow.stop:SetShown(h ~= nil)
+    huntWindow:Show()
+end
+
+-- A leaderboard in a tooltip: { { name, n }, ... }.
+local function BoardTip(owner, title, board, extra)
+    GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+    GameTooltip:AddLine(title)
+    for _, line in ipairs(extra or {}) do GameTooltip:AddDoubleLine(line[1], line[2], 0.8, 0.8, 0.8, 1, 1, 1) end
+    if extra and #extra > 0 then GameTooltip:AddLine(" ") end
+    if #board == 0 then GameTooltip:AddLine("No killing blows yet.", 0.55, 0.55, 0.57) end
+    for i = 1, math.min(10, #board) do
+        local member = AF.Standings:All()[board[i].name]
+        local r, g, b = ClassColor(member and member.classFile)
+        GameTooltip:AddDoubleLine(("%d. %s"):format(i, AF:ShortName(board[i].name)), BreakUpLargeNumbers(board[i].n), r, g, b, 1, 1, 1)
+    end
+    GameTooltip:AddLine(" ")
+    GameTooltip:AddLine("Killing blows from guild members with GMS.", 0.55, 0.55, 0.57, true)
+    GameTooltip:Show()
+end
+
 local achFilter = "all"
 local ACH_FILTERS = { "all", "won", "open" }
 local ACH_FILTER_TEXT = { all = "Show: all", won = "Show: earned", open = "Show: still open" }
@@ -2795,8 +2872,51 @@ function AchTab:Build(panel)
         end
         self:Refresh()
     end)
+    -- The race hunt and the guild's killing blows, each with a leaderboard on hover.
+    local function Line(y)
+        local f = CreateFrame("Frame", nil, panel)
+        f:SetPoint("TOPLEFT", 16, y)
+        f:SetSize(370, 18)
+        f.text = Theme.Text(f, 11)
+        f.text:SetPoint("LEFT")
+        f.text:SetWidth(200)
+        f.text:SetJustifyH("LEFT")
+        f.text:SetWordWrap(false)
+        f.bar = Theme.Bar(f, 150, 8)
+        f.bar:SetPoint("LEFT", 206, 0)
+        f:EnableMouse(true)
+        f:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        return f
+    end
+    self.huntLine = Line(-42)
+    self.huntLine:SetScript("OnEnter", function(f)
+        local h = AF.Hunt.Current()
+        if not h then return end
+        local board, total = AF.Hunt:Board()
+        BoardTip(f, ("%s hunt"):format(AF.Hunt.RaceName(h.r)), board,
+            { { "Together", ("%s / %s"):format(BreakUpLargeNumbers(total), BreakUpLargeNumbers(h.g)) },
+              { "You", BreakUpLargeNumbers(AF.Hunt:MyCount()) } })
+    end)
+    self.killLine = Line(-62)
+    self.killLine.bar:Hide()
+    self.killLine.text:SetWidth(360)
+    self.killLine:SetScript("OnEnter", function(f)
+        local byRace, byMain, total = AF.Hunt:KillTotals()
+        local board = {}
+        for name, m in pairs(byMain) do table.insert(board, { name = name, n = m.total }) end
+        table.sort(board, function(a, b) return a.n > b.n end)
+        local extra = { { "All races", BreakUpLargeNumbers(total) } }
+        for _, race in ipairs(AF.Hunt.EnemyRaces()) do
+            table.insert(extra, { AF.Hunt.RaceName(race, true), BreakUpLargeNumbers(byRace[race] or 0) })
+        end
+        BoardTip(f, "Killing blows on players", board, extra)
+    end)
+    self.huntButton = Theme.Button(panel, "Race hunt", 80, 20)
+    self.huntButton:SetPoint("TOPRIGHT", -16, -40)
+    self.huntButton:SetScript("OnClick", function() UI:ShowHunt() end)
+
     self.list = Theme.List(panel, {
-        left = 14, top = -42, rows = 21, rowHeight = 22,
+        left = 14, top = -86, rows = 19, rowHeight = 22,
         emptyText = "Nothing here yet.",
         columns = {
             { key = "name", label = "Achievement", width = 196 },
@@ -2884,11 +3004,31 @@ function AchTab:Refresh()
         end
     end
     self.summary:SetText(("Guild firsts: %d of %d earned"):format(earned, total))
+    local h = AF.Hunt.Current()
+    if h then
+        local _, together = AF.Hunt:Board()
+        self.huntLine.text:SetText(("|cffff9933%s hunt:|r %s / %s"):format(AF.Hunt.RaceName(h.r),
+            BreakUpLargeNumbers(together), BreakUpLargeNumbers(h.g)))
+        self.huntLine.bar:SetValue(together / h.g)
+        self.huntLine.bar:Show()
+    else
+        self.huntLine.text:SetText("No race hunt right now." .. (AF.Config:CanEdit() and " Officers start one with Race hunt." or ""))
+        self.huntLine.text:SetTextColor(unpack(C.dim))
+        self.huntLine.bar:Hide()
+    end
+    if h then self.huntLine.text:SetTextColor(unpack(C.text)) end
+    local _, _, kills = AF.Hunt:KillTotals()
+    self.killLine.text:SetText(("Killing blows on players: %s  ·  hover for the leaderboard"):format(BreakUpLargeNumbers(kills)))
+    self.killLine.text:SetTextColor(unpack(C.dim))
+    self.huntButton:SetShown(AF.Config:CanEdit())
     self.filter.label:SetText(ACH_FILTER_TEXT[achFilter])
     self.list:SetData(data)
 end
 
 AF:On("ACHIEVEMENTS_UPDATED", function()
+    if Visible(AchTab) then AchTab:Refresh() end
+end)
+AF:On("HUNT_UPDATED", function()
     if Visible(AchTab) then AchTab:Refresh() end
 end)
 
@@ -3610,6 +3750,7 @@ end)
 AF:On("CONFIG_UPDATED", function()
     RefreshAll()
     RefreshNav()
+    if Visible(AchTab) then AchTab:Refresh() end
     if Visible(RecruitTab) then RecruitTab:Refresh() end
     if Visible(PrioTab) then PrioTab:Refresh() end
     if Visible(Options) then Options:Refresh() end

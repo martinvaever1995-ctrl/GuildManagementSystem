@@ -25,6 +25,9 @@ local PROF_CAP = 300
 local HK_STEPS = { 1000, 5000, 10000, 25000 }
 local RANK_STEPS = { 6, 8, 10, 12, 13, 14 }
 local MEMBER_STEPS = { 50, 100, 200, 500 }
+local RACE_STEPS = { 100, 500, 1000 }
+local ALL_STEPS = { 1000, 5000, 10000, 25000 }
+local EACH_STEP = 100
 local BATTLEGROUNDS = { "Warsong Gulch", "Arathi Basin", "Alterac Valley" }
 local BG_GUILD_MIN = 5
 local SCAN_GAP = 10             -- seconds between two scans
@@ -112,6 +115,30 @@ function Achievements:Definitions(won)
     for key, w in pairs(won) do
         if key:find("^bg:") and not seen[key] then
             Add("PvP", key, key:sub(4) .. " win", ("The first %s win with guild members."):format(key:sub(4)))
+        end
+    end
+    -- Killing blows on players, by the whole guild.
+    for _, race in ipairs(AF.Hunt.EnemyRaces()) do
+        for _, n in ipairs(RACE_STEPS) do
+            Add("PvP", ("kills:%s:%d"):format(race, n), ("%s %s slain"):format(BreakUpLargeNumbers(n), AF.Hunt.RaceName(race, true)),
+                ("Together, %s killing blows on %s."):format(BreakUpLargeNumbers(n), AF.Hunt.RaceName(race, true)))
+        end
+    end
+    for _, n in ipairs(ALL_STEPS) do
+        Add("PvP", "kills:all:" .. n, ("%s players slain"):format(BreakUpLargeNumbers(n)),
+            ("Together, %s killing blows on players of any race."):format(BreakUpLargeNumbers(n)))
+    end
+    Add("PvP", "kills:each:" .. EACH_STEP, "Every race", ("Together, %d killing blows on every enemy race."):format(EACH_STEP))
+    -- Race hunts: the current one, and every one the guild finished.
+    local hunt = AF.Hunt.Current()
+    if hunt then
+        local key = "hunt:" .. hunt.k
+        Add("PvP", key, ("Hunt: %d %s"):format(hunt.g, AF.Hunt.RaceName(hunt.r, true)),
+            ("Together, %d killing blows on %s."):format(hunt.g, AF.Hunt.RaceName(hunt.r, true)))
+    end
+    for key, w in pairs(won) do
+        if key:find("^hunt:") and not seen[key] then
+            Add("PvP", key, "Hunt: " .. (w.x or key:sub(6)), ("Together, %s killing blows."):format(w.x or "a race hunt's"))
         end
     end
     for _, n in ipairs(MEMBER_STEPS) do
@@ -222,6 +249,28 @@ local function Scan()
         for _, main in ipairs(AF.Ledger:WeekPlayers(week)) do
             if AF.Ledger:WeekScore(week, main) >= weekMax then Try("week", main) end
             if AF.Config:Feature("honor") and (AF.Ledger:WeekHonor(week, main) or 0) >= target then Try("honor", main) end
+        end
+    end
+    local byRace, _, killTotal = AF.Hunt:KillTotals()
+    local enemies, each = AF.Hunt.EnemyRaces(), true
+    for _, race in ipairs(enemies) do
+        for _, n in ipairs(RACE_STEPS) do
+            if (byRace[race] or 0) >= n then Try(("kills:%s:%d"):format(race, n), "guild", now) end
+        end
+        if (byRace[race] or 0) < EACH_STEP then each = false end
+    end
+    for _, n in ipairs(ALL_STEPS) do
+        if killTotal >= n then Try("kills:all:" .. n, "guild", now) end
+    end
+    if each then Try("kills:each:" .. EACH_STEP, "guild", now) end
+    local hunt = AF.Hunt.Current()
+    if hunt then
+        local byMain, total = AF.Ledger:HuntCounts(hunt.k)
+        if total >= hunt.g then
+            local hunters = {}
+            for name in pairs(byMain) do table.insert(hunters, name) end
+            table.sort(hunters)
+            Try("hunt:" .. hunt.k, "guild", now, hunters, ("%d %s"):format(hunt.g, AF.Hunt.RaceName(hunt.r, true)))
         end
     end
     for key, e in pairs(AF.Ledger:FirstKills()) do
@@ -416,6 +465,7 @@ AF:On("STANDINGS_UPDATED", function()
     if not AF.Ledger:CanRecord() then CheckNew() end
 end)
 AF:On("CONFIG_UPDATED", QueueScan)
+AF:On("HUNT_UPDATED", QueueScan)
 
 -- For /gms debug.
 function Achievements.ApiReport()

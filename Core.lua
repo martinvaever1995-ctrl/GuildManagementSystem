@@ -5,8 +5,8 @@
 local ADDON_NAME, AF = ...
 _G.GuildManagementSystem = AF
 
-AF.VERSION = 30500          -- major * 10000 + minor * 100 + patch; bump with ## Version
-AF.VERSION_STRING = "3.5.0"
+AF.VERSION = 30600          -- major * 10000 + minor * 100 + patch; bump with ## Version
+AF.VERSION_STRING = "3.6.0"
 AF.DISCORD = "https://discord.gg/U4UCtfRgmE"
 AF.PREFIX = "GuildMgmtSys"  -- addon message prefix (max 16 chars)
 AF.PREFIX_BULK = "GuildMgmtSysBk"   -- the slow lane for large data (Comm.lua)
@@ -424,6 +424,11 @@ function AF:DebugLines()
     Add("Achievements: %s | PvP rank: %s | honorable kills: %s | battleground winner: %s",
         self.Config:Feature("achievements") and "on" or "off", rankApi and "yes" or "NO", hkApi and "yes" or "NO",
         bgApi and "yes" or "NO")
+    local logOK, infoOK, lastRace = self.Hunt.ApiReport()
+    local hunt = self.Hunt.Current()
+    Add("Race hunt: %s | combat log: %s | player info: %s | your last killing blow on a player: %s",
+        hunt and ("%s, goal %d"):format(hunt.r, hunt.g) or "none set", logOK and "yes" or "NO", infoOK and "yes" or "NO",
+        tostring(lastRace or "none yet"))
     local logApi, saved = self.History.ApiReport()
     Add("Guild event log: %s | events saved: %d", logApi and "yes" or "NO (no member history)", saved)
     local whoApi, inviteApi, canInvite = self.Recruiter.ApiReport()

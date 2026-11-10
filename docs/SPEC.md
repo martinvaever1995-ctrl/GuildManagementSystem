@@ -1,4 +1,4 @@
-# Guild Management System (GMS) — Spec (v3.5.0)
+# Guild Management System (GMS) — Spec (v3.6.0)
 
 ## Goal
 A WoW addon that helps officers distribute raid loot by showing each player's **effort**:
@@ -555,6 +555,29 @@ keep a copy outside the game. Nothing is stored in guild notes.
       `/gms achievements` or `/gms ach`.
     - `/gms debug` says whether this client has the PvP rank, honorable kill and battleground
       winner functions.
+
+25. Race hunt and PvP kills (3.6.0). **Done, awaiting in-game test.**
+    - **Counting** (`Hunt.lua`): each client counts its own killing blows on players from
+      the combat log (`PARTY_KILL` by us on a `Player-` GUID; `GetPlayerInfoByGUID` gives
+      the race). Killing blows, not honorable kills: an honorable kill is shared by everyone
+      nearby. Only guild members with GMS count. If the client blocks the combat log for
+      addons, nothing is counted; `/gms debug` says ("Race hunt ... combat log: yes/NO").
+    - **Race hunt (decided: a guild total with a leaderboard):** officers pick an enemy race
+      and a goal (Achievements → Race hunt; `config.hunt = { k, r, g }`, a new race gets a
+      new key and starts at 0). Clients report their count for the current hunt (`HUNT`,
+      every 2 min at most, resent until `HUNTACK`); officers record `hunt` ledger events
+      (`hunt:<key>:<player>`, sequence = count, the highest counts), kept while that hunt is
+      current. Raiders get the counts in snapshots (`hn`). Reaching the goal is a guild
+      achievement "Hunt: 500 Gnomes".
+    - **All-time kills per race:** reported as `KB { c = { race = n } }` (resent until
+      `KBACK`). They're reported often and last forever, so they stay out of the ledger:
+      officers keep the highest count per character (`AF.db.kbAll`) and share them in
+      snapshots (`kb`), which every client merges (the highest wins).
+    - **Achievements (guild totals):** 100 / 500 / 1,000 of each enemy race; 1,000 / 5,000 /
+      10,000 / 25,000 players of any race; 100 of every enemy race.
+    - **Achievements tab:** the hunt's progress with a bar, and the guild's killing blows;
+      hovering either shows the top 10 (and the per-race totals). Officers start, change or
+      end the hunt there.
 
 ## Later
 Planned:

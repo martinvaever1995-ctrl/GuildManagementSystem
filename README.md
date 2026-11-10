@@ -142,6 +142,10 @@ becomes the holder and tells the raid.
   boss and run of every end-game dungeon, PvP ranks, honorable kills, battleground wins with
   guildies, and guild milestones. New firsts pop up for everyone and are announced in guild
   chat (officers can switch that off).
+- **Race hunt and PvP kills:** officers pick an enemy race and a goal ("500 Gnomes"); the guild's
+  killing blows on that race count toward it, with a leaderboard. All killing blows on players
+  also count toward guild achievements per race and for all races together. Counted by guild
+  members with GMS.
 - **Check group** (`/gms check`): addon versions, repair, flasks/elixirs, missing class buffs and
   range for everyone in the group, with a tanks / healers / DPS count.
 - **Raid invites** (`/gms invite`): invite everyone online at chosen ranks and minimum effort,

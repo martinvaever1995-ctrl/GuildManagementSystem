@@ -31,6 +31,9 @@
 --            p = { names } for a group, x = extra text (boss, dungeon, item),
 --            pre = true when they had it before GMS (t = 0). Origin
 --            "ach:<key>:<n>", sequence = time; the earliest per key wins. Kept for good.
+--    "hunt"  n = player, h = race hunt key, v = their killing blows on that race so
+--            far (origin "hunt:<key>:<player>", sequence = v; the highest counts).
+--            Kept while that hunt is the guild's current one.
 --  Scores, breakdowns and items won are all worked out from the events.
 --
 --  Officers' clients send new events to the guild as they happen, and on login
@@ -65,6 +68,7 @@ local links = {}            -- character -> { link event, ... }
 local runs = {}             -- week -> { run event, ... }
 local runGroups = {}        -- week -> runs grouped into real runs (cache; cleared on changes)
 local achs = {}             -- achievement key -> { ach event, ... }
+local hunts = {}            -- race hunt key -> name -> highest count reported
 local RUN_MERGE = 600       -- seconds: reports this close (same dungeon, shared players) are one run
 
 -- Links (who is whose alt) and removals stay until changed; everything else is
@@ -79,6 +83,16 @@ local function Newer(a, b)
 end
 
 local function Live(e) return not voided[e.id] end
+
+-- Kept past KEEP_WEEKS: links, removals, achievements, and the current race hunt.
+local function Kept(e)
+    if TIMELESS[e.k] then return true end
+    if e.k == "hunt" then
+        local hunt = AF.Config:Get("hunt")
+        return hunt and hunt.k == e.h
+    end
+    return false
+end
 
 local function ListFor(store, week, name)
     store[week] = store[week] or {}
@@ -128,6 +142,9 @@ local function Index(e)
     elseif e.k == "ach" then
         achs[e.a] = achs[e.a] or {}
         table.insert(achs[e.a], e)
+    elseif e.k == "hunt" then
+        hunts[e.h] = hunts[e.h] or {}
+        table.insert(hunts[e.h], e)
     elseif e.k == "void" then
         voided[e.ref] = true
         wipe(runGroups)
@@ -146,6 +163,7 @@ local function Valid(e)
         return true
     end
     if k == "void" then return type(e.ref) == "string" end
+    if k == "hunt" then return type(e.n) == "string" and type(e.h) == "string" and type(e.v) == "number" end
     if k == "ach" then
         if type(e.a) ~= "string" or type(e.n) ~= "string" then return false end
         if e.x ~= nil and type(e.x) ~= "string" then return false end
@@ -183,7 +201,7 @@ end
 local function Add(e)
     local current = AF.Standings.CurrentWeek()
     if events[e.id] or e.w > current + 1 then return false end
-    if e.w < current - KEEP_WEEKS and not TIMELESS[e.k] then return false end
+    if e.w < current - KEEP_WEEKS and not Kept(e) then return false end
     events[e.id] = e
     Index(e)
     -- Our own events coming back (restored saved data): never reuse their numbers.
@@ -270,6 +288,27 @@ function Ledger:RecordAch(key, name, t, group, extra, pre)
     t = pre and 0 or math.floor(t or GetServerTime())
     return Record({ k = "ach", a = key, n = name, t = t, p = group, x = extra, pre = pre or nil },
         "ach:" .. key .. ":" .. name, t)
+end
+
+-- A player's killing blows on the race of a hunt, as their client reported them.
+function Ledger:RecordHunt(name, key, count)
+    return Record({ k = "hunt", n = name, h = key, v = count }, "hunt:" .. key .. ":" .. name, count)
+end
+
+-- A race hunt's counts: main -> killing blows (the highest report per character,
+-- added up over a player's characters), and the guild's total.
+function Ledger:HuntCounts(key)
+    local byChar = {}
+    for _, e in ipairs(hunts[key] or {}) do
+        if Live(e) and e.v > (byChar[e.n] or 0) then byChar[e.n] = e.v end
+    end
+    local byMain, total = {}, 0
+    for name, n in pairs(byChar) do
+        local main = self:MainOf(name)
+        byMain[main] = (byMain[main] or 0) + n
+        total = total + n
+    end
+    return byMain, total
 end
 
 -- Removes an event from every score by recording a void for it.
@@ -981,7 +1020,7 @@ function Ledger:Init()
 end
 
 local function ClearIndexes()
-    for _, t in ipairs({ buckets, cats, won, deps, kills, present, benched, voided, honors, links, runs, runGroups, achs }) do
+    for _, t in ipairs({ buckets, cats, won, deps, kills, present, benched, voided, honors, links, runs, runGroups, achs, hunts }) do
         wipe(t)
     end
 end
@@ -995,7 +1034,7 @@ function Ledger:Enable()
     -- ledger; then their events are dropped and the rest indexed again.
     local leaving = {}
     for _, e in pairs(events) do
-        if e.w < oldest and not TIMELESS[e.k] then leaving[e.w] = true end
+        if e.w < oldest and not Kept(e) then leaving[e.w] = true end
     end
     if next(leaving) then
         for week in pairs(leaving) do
@@ -1007,7 +1046,7 @@ function Ledger:Enable()
             end
         end
         for id, e in pairs(events) do
-            if leaving[e.w] and not TIMELESS[e.k] then events[id] = nil end
+            if leaving[e.w] and not Kept(e) then events[id] = nil end
         end
         ClearIndexes()
         for _, e in pairs(events) do Index(e) end

@@ -1,5 +1,17 @@
 # Guild Management System
 
+## v3.6.0
+
+### PvP
+- **Race hunt:** officers pick an enemy race and a goal, e.g. 500 Gnomes (Achievements → Race
+  hunt). Every killing blow on that race by a guild member with GMS counts. The Achievements
+  tab shows the progress, and hovering it shows the leaderboard. Reaching the goal is a guild
+  achievement.
+- **PvP kill achievements:** the guild's killing blows on players count toward new guild
+  achievements: 100, 500 and 1,000 of each enemy race, 1,000 to 25,000 players in total, and 100
+  of every enemy race. Hover "Killing blows on players" for the totals and the top 10.
+- Killing blows, not honorable kills, so one kill counts once.
+
 ## v3.5.0
 
 ### Guild achievements

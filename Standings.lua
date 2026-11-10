@@ -286,7 +286,7 @@ local function BuildSnapshot()
         end
     end
     return { t = GetServerTime(), w = Standings.CurrentWeek(), s = s, sd = sd, m = AF.Ledger:AltMap(), g = g, wn = wn,
-        ac = AF.Achievements:SnapshotField() }
+        ac = AF.Achievements:SnapshotField(), hn = AF.Hunt:SnapshotField(), kb = AF.Hunt:KillsField() }
 end
 
 local function SendSnapshot()
@@ -317,6 +317,18 @@ local function ValidSnapshot(data)
             if type(name) ~= "string" or type(text) ~= "string" or not text:match("^[%d,]+|[%d,]+$") then return false end
         end
     end
+    if data.kb ~= nil then
+        if type(data.kb) ~= "table" then return false end
+        for name, text in pairs(data.kb) do
+            if type(name) ~= "string" or type(text) ~= "string" or not text:match("^[%a%d:,]*$") then return false end
+        end
+    end
+    if data.hn ~= nil then
+        if type(data.hn) ~= "table" or type(data.hn.k) ~= "string" or type(data.hn.c) ~= "table" then return false end
+        for name, n in pairs(data.hn.c) do
+            if type(name) ~= "string" or type(n) ~= "number" then return false end
+        end
+    end
     if data.ac ~= nil then
         if type(data.ac) ~= "table" then return false end
         for key, text in pairs(data.ac) do
@@ -342,9 +354,10 @@ AF.Comm:On("SNAP", function(sender, data)
     if not AF.Config:IsOfficer(sender) or not ValidSnapshot(data) then return end
     if answerTimer and sender ~= AF.playerName then answerTimer:Cancel(); answerTimer = nil end   -- answered
     local current = AF.db.snapshot
+    AF.Hunt:MergeField(data.kb)       -- kill counts: keep the highest from every officer
     if current and current.t >= data.t then return end
     AF.db.snapshot = { by = sender, t = data.t, w = data.w, s = data.s, sd = data.sd, m = data.m,
-        g = type(data.g) == "table" and data.g or nil, wn = data.wn, ac = data.ac }
+        g = type(data.g) == "table" and data.g or nil, wn = data.wn, ac = data.ac, hn = data.hn }
     AF:Fire("STANDINGS_UPDATED")
 end)
 
