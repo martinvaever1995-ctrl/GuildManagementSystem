@@ -36,6 +36,11 @@ local PROFESSIONS = {
     Inscription = true, Cooking = true, ["First Aid"] = true, Fishing = true,
 }
 
+-- The professions by name, sorted (Achievements lists them).
+Professions.NAMES = {}
+for name in pairs(PROFESSIONS) do table.insert(Professions.NAMES, name) end
+table.sort(Professions.NAMES)
+
 local index                     -- id -> { { name, prof }, ... }; id < 0 is a spell
 local sendTimer, ownTimer, offerTimer
 local digests = {}              -- sender -> the digest they sent (to answer PROFQ { all })

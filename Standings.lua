@@ -285,7 +285,8 @@ local function BuildSnapshot()
             end
         end
     end
-    return { t = GetServerTime(), w = Standings.CurrentWeek(), s = s, sd = sd, m = AF.Ledger:AltMap(), g = g, wn = wn }
+    return { t = GetServerTime(), w = Standings.CurrentWeek(), s = s, sd = sd, m = AF.Ledger:AltMap(), g = g, wn = wn,
+        ac = AF.Achievements:SnapshotField() }
 end
 
 local function SendSnapshot()
@@ -316,6 +317,12 @@ local function ValidSnapshot(data)
             if type(name) ~= "string" or type(text) ~= "string" or not text:match("^[%d,]+|[%d,]+$") then return false end
         end
     end
+    if data.ac ~= nil then
+        if type(data.ac) ~= "table" then return false end
+        for key, text in pairs(data.ac) do
+            if type(key) ~= "string" or type(text) ~= "string" or not text:match("^%d+;[^;]*;%d+;[^;]*$") then return false end
+        end
+    end
     if data.wn ~= nil then
         if type(data.wn) ~= "table" then return false end
         for name, ids in pairs(data.wn) do
@@ -337,7 +344,7 @@ AF.Comm:On("SNAP", function(sender, data)
     local current = AF.db.snapshot
     if current and current.t >= data.t then return end
     AF.db.snapshot = { by = sender, t = data.t, w = data.w, s = data.s, sd = data.sd, m = data.m,
-        g = type(data.g) == "table" and data.g or nil, wn = data.wn }
+        g = type(data.g) == "table" and data.g or nil, wn = data.wn, ac = data.ac }
     AF:Fire("STANDINGS_UPDATED")
 end)
 

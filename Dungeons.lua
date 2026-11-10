@@ -65,6 +65,23 @@ function Dungeons.IsLeveling(encounterID)
     return LEVELING[encounterID] ~= nil and AF.Config:Get("finals")[encounterID] ~= true
 end
 
+-- The built-in end-game dungeons: { { enc, dungeon, boss }, ... } by dungeon name.
+function Dungeons.FinalList()
+    local out = {}
+    for enc, text in pairs(FINALS) do
+        local dungeon, boss = text:match("^(.-): (.+)$")
+        table.insert(out, { enc = enc, dungeon = dungeon or text, boss = boss or "" })
+    end
+    table.sort(out, function(a, b) return a.dungeon < b.dungeon end)
+    return out
+end
+
+-- A built-in final boss's dungeon name, or nil.
+function Dungeons.FinalName(enc)
+    local text = FINALS[enc]
+    return text and (text:match("^(.-): ") or text)
+end
+
 function Dungeons.BuiltInCount()
     local n = 0
     for _ in pairs(FINALS) do n = n + 1 end

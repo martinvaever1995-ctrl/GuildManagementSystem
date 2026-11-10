@@ -137,6 +137,11 @@ becomes the holder and tells the raid.
     week's kills, awards, runs and deposits.
   - **History:** joins, leaves, kicks and promotions from the game's guild log, kept longer than
     the game keeps them (if the client allows it; `/gms debug` says).
+- **Achievements** (`/gms achievements`): guild firsts in PvE and PvP: the first to the level
+  cap (and per class), to max a profession, to each attunement, the first kill of every raid
+  boss and run of every end-game dungeon, PvP ranks, honorable kills, battleground wins with
+  guildies, and guild milestones. New firsts pop up for everyone and are announced in guild
+  chat (officers can switch that off).
 - **Check group** (`/gms check`): addon versions, repair, flasks/elixirs, missing class buffs and
   range for everyone in the group, with a tanks / healers / DPS count.
 - **Raid invites** (`/gms invite`): invite everyone online at chosen ranks and minimum effort,
@@ -218,6 +223,7 @@ that off per addon in EllesmereUI's options.
 | `/gms attune` | Who in the guild is attuned to which raid (officers add or remove attunements) |
 | `/gms layers` | Which layer online guild members are on, and who to whisper for an invite |
 | `/gms analytics` (or `/gms stats`) | The guild in numbers: classes, levels, ranks, professions, attunements, effort |
+| `/gms achievements` (or `/gms ach`) | Guild firsts in PvE and PvP: who got there first |
 | `/gms versions` (or `/gms check`) | Who in your group has the addon and which version, with durability, flasks / elixirs and range |
 | `/gms invite` | Raid invites by rank and minimum effort, and invites by whisper keyword |
 | `/gms minimap` | Show or hide the minimap button |

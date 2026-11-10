@@ -263,3 +263,21 @@ Setup: an officer, then a second recruiter (a rank that may invite) online at th
    `16866`: it's added like a shift-clicked item. `/gms wish 16866` works too.
 7. Put an item on your wishlist, `/gms test <that item>`: besides the popup and sound, a card
    "From your wishlist: ... dropped: #1 on your wishlist".
+
+## 24. Guild achievements
+Setup: an officer, `/reload`, wait a minute (the first scan runs after the ledger sync).
+1. `/gms debug`: "Achievements: on | PvP rank: yes | honorable kills: yes | battleground winner:
+   yes". Any NO: that part can't be detected on this client; tell me.
+2. `/gms ach`: groups Levels, Professions, Attunements, Raids, Dungeons, PvP, Guild, with "Guild
+   firsts: N of M earned". Things players already had show "(before GMS)" with everyone who had
+   them in the tooltip (e.g. "100 members: the guild (before GMS)", maxed professions).
+   Raid bosses killed this week show as earned with the raid in the tooltip.
+3. The filter button: all / earned / still open.
+4. A new first while you watch (e.g. someone dings the level cap, maxes a profession, or a
+   new boss dies): within ~10 seconds a card "Guild first! ..." for everyone with GMS, and one
+   "[GMS] Guild first! ..." line in guild chat (only one, even with several officers online).
+5. A raider (not an officer): sees the same achievements in the tab after the next snapshot.
+6. PvP: a battleground win with 5+ guild members on your team: the battleground's
+   achievement (once an officer is online). A new PvP rank or an honorable kill step likewise.
+7. Guild setup: "Announce new guild firsts" off: cards still show, no guild chat line.
+   "Guild achievements" off: the tab disappears.

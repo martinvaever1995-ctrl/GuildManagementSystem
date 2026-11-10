@@ -1,5 +1,19 @@
 # Guild Management System
 
+## v3.5.0
+
+### Guild achievements
+- **Guild achievements** (`/gms achievements`): guild firsts in PvE and PvP.
+  - **PvE:** the first to the level cap (and the first of each class), to 300 in each
+    profession, to each attunement; the guild's first kill of every raid boss and first run of
+    every end-game dungeon.
+  - **PvP:** the first to fill the weekly honor score, to 1,000 / 5,000 / 10,000 / 25,000
+    honorable kills, to PvP ranks 6 to 14, and the first battleground wins with 5+ guildies.
+  - **Guild:** 50, 100, 200 and 500 members, the first bank goal reached, the first perfect week.
+  - New firsts pop up for everyone online and are announced in guild chat.
+  - Achievements players already had before GMS are shared by all of them.
+  - Officers can switch achievements, or just the guild chat line, off in guild setup.
+
 ## v3.4.0
 
 ### Analytics

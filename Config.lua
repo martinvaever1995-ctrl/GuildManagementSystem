@@ -52,6 +52,8 @@ Config.FEATURES = {
     { key = "tokens", label = "Tier tokens: classes and the sets players wear", default = true },
     { key = "winsPublic", label = "Show items won this week to everyone", default = false },
     { key = "analytics", label = "Guild analytics: classes, levels, professions and more", default = true },
+    { key = "achievements", label = "Guild achievements: firsts in PvE and PvP", default = true },
+    { key = "achAnnounce", label = "Announce new guild firsts in guild chat", default = true },
     -- Held back for now (not released): { key = "recruiter", label = "Recruiter: /who search, whisper and invite guildless players", default = false },
 }
 local FEATURE_DEFAULT = {}

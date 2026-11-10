@@ -27,6 +27,10 @@
 --    "link"  n = character, m = its main (m == n: a main), src = "self" | "officer";
 --            officer links beat self reports, newest wins; kept until changed
 --    "void"  ref = id of an event to ignore (an officer removed it)
+--    "ach"   a = achievement key, n = who ("group" / "guild" for shared ones),
+--            p = { names } for a group, x = extra text (boss, dungeon, item),
+--            pre = true when they had it before GMS (t = 0). Origin
+--            "ach:<key>:<n>", sequence = time; the earliest per key wins. Kept for good.
 --  Scores, breakdowns and items won are all worked out from the events.
 --
 --  Officers' clients send new events to the guild as they happen, and on login
@@ -60,11 +64,12 @@ local honors = {}           -- week -> name -> { event, ... }
 local links = {}            -- character -> { link event, ... }
 local runs = {}             -- week -> { run event, ... }
 local runGroups = {}        -- week -> runs grouped into real runs (cache; cleared on changes)
+local achs = {}             -- achievement key -> { ach event, ... }
 local RUN_MERGE = 600       -- seconds: reports this close (same dungeon, shared players) are one run
 
 -- Links (who is whose alt) and removals stay until changed; everything else is
 -- kept KEEP_WEEKS weeks.
-local TIMELESS = { link = true, void = true }
+local TIMELESS = { link = true, void = true, ach = true }
 
 Ledger.readyAt = math.huge
 
@@ -120,6 +125,9 @@ local function Index(e)
         runs[e.w] = runs[e.w] or {}
         table.insert(runs[e.w], e)
         runGroups[e.w] = nil
+    elseif e.k == "ach" then
+        achs[e.a] = achs[e.a] or {}
+        table.insert(achs[e.a], e)
     elseif e.k == "void" then
         voided[e.ref] = true
         wipe(runGroups)
@@ -138,6 +146,17 @@ local function Valid(e)
         return true
     end
     if k == "void" then return type(e.ref) == "string" end
+    if k == "ach" then
+        if type(e.a) ~= "string" or type(e.n) ~= "string" then return false end
+        if e.x ~= nil and type(e.x) ~= "string" then return false end
+        if e.p ~= nil then
+            if type(e.p) ~= "table" then return false end
+            for _, name in ipairs(e.p) do
+                if type(name) ~= "string" then return false end
+            end
+        end
+        return true
+    end
     if type(e.n) ~= "string" then return false end
     if k == "cat" then return AF.Standings.CATEGORY_TEXT[e.c] ~= nil and type(e.v) == "number" end
     if k == "won" then return type(e.l) == "string" and (e.y == nil or type(e.y) == "string") end
@@ -243,6 +262,14 @@ end
 
 function Ledger:RecordBench(killId, name, week)
     return Record({ k = "bench", n = name, ref = killId, w = week }, "bench:" .. killId .. ":" .. name, 1)
+end
+
+-- A guild first (see Achievements.lua). name: the player, or "group" / "guild";
+-- group: { names } for a group; extra: boss, dungeon or item; pre: already done before GMS.
+function Ledger:RecordAch(key, name, t, group, extra, pre)
+    t = pre and 0 or math.floor(t or GetServerTime())
+    return Record({ k = "ach", a = key, n = name, t = t, p = group, x = extra, pre = pre or nil },
+        "ach:" .. key .. ":" .. name, t)
 end
 
 -- Removes an event from every score by recording a void for it.
@@ -508,7 +535,7 @@ local function RunGroups(week)
         else
             local members = {}
             for _, name in ipairs(e.p) do members[name] = true end
-            table.insert(groups, { map = e.map, mn = e.mn, boss = e.en, t = e.t, members = members })
+            table.insert(groups, { map = e.map, mn = e.mn, boss = e.en, enc = e.enc, t = e.t, members = members })
         end
     end
     runGroups[week] = groups
@@ -626,6 +653,63 @@ function Ledger:WeekWins(week)
         end
     end
     table.sort(out, function(a, b) return Newer(b, a) end)
+    return out
+end
+
+-- Guild firsts: key -> { n, t, p, x, by, pre }. The earliest event per key wins
+-- (ties: by name). Achievements players had before GMS (pre) list all of them.
+function Ledger:Achievements()
+    local out = {}
+    for key, list in pairs(achs) do
+        local best
+        for _, e in ipairs(list) do
+            if Live(e) and (not best or e.t < best.t or (e.t == best.t and e.n < best.n)) then best = e end
+        end
+        if best then
+            local w = { n = best.n, t = best.t, p = best.p, x = best.x, by = best.by, pre = best.pre }
+            if best.pre then
+                local names, seen = {}, {}
+                for _, e in ipairs(list) do
+                    if Live(e) and e.pre then
+                        for _, name in ipairs(e.p or { e.n }) do
+                            if not seen[name] then
+                                seen[name] = true
+                                table.insert(names, name)
+                            end
+                        end
+                    end
+                end
+                table.sort(names)
+                w.p = names
+            end
+            out[key] = w
+        end
+    end
+    return out
+end
+
+-- The first live guild kill of each boss: key ("enc" or the boss name) -> kill event.
+function Ledger:FirstKills()
+    local out = {}
+    for _, list in pairs(kills) do
+        for _, e in ipairs(list) do
+            if Live(e) then
+                local key = e.enc > 0 and tostring(e.enc) or e.en
+                if not out[key] or e.t < out[key].t then out[key] = e end
+            end
+        end
+    end
+    return out
+end
+
+-- The first counted run of each dungeon: final boss encounter -> { mn, boss, enc, t, members }.
+function Ledger:FirstRuns()
+    local out = {}
+    for week in pairs(runs) do
+        for _, g in ipairs(RunGroups(week)) do
+            if g.enc and (not out[g.enc] or g.t < out[g.enc].t) then out[g.enc] = g end
+        end
+    end
     return out
 end
 
@@ -897,7 +981,7 @@ function Ledger:Init()
 end
 
 local function ClearIndexes()
-    for _, t in ipairs({ buckets, cats, won, deps, kills, present, benched, voided, honors, links, runs, runGroups }) do
+    for _, t in ipairs({ buckets, cats, won, deps, kills, present, benched, voided, honors, links, runs, runGroups, achs }) do
         wipe(t)
     end
 end

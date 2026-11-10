@@ -1,4 +1,4 @@
-# Guild Management System (GMS) — Spec (v3.4.0)
+# Guild Management System (GMS) — Spec (v3.5.0)
 
 ## Goal
 A WoW addon that helps officers distribute raid loot by showing each player's **effort**:
@@ -520,6 +520,41 @@ keep a copy outside the game. Nothing is stored in guild notes.
       (`.../item=12345/...`) or an item ID (`AF:ItemID`).
     - **Wishlist card:** when an item on your wishlist drops, a card says so (besides the sound
       and the popup).
+
+24. Guild achievements (3.5.0). **Done, awaiting in-game test.**
+    - **Guild firsts, PvE and PvP only (decided: no officer-made ones).** Each is won once, by
+      whoever gets there first:
+      - Levels: the level cap; the cap per class
+      - Professions: `300` in each profession (crafters directory)
+      - Attunements: each attunement in the Attunements tab
+      - Raids: the first guild kill of each boss, as bosses are killed (no list of future bosses)
+      - Dungeons: the first counted run of each end-game dungeon
+      - PvP: the weekly honor score full; 1,000 / 5,000 / 10,000 / 25,000 lifetime honorable
+        kills; PvP ranks 6, 8, 10, 12, 13, 14; a win in Warsong Gulch, Arathi Basin, Alterac
+        Valley (and any other battleground) with 5+ guild members on the team
+      - Guild: 50 / 100 / 200 / 500 members, the first bank goal reached, the first full-score week
+    - **Recording:** officers record `ach` ledger events (never expire). Origin
+      `ach:<key>:<who>`, sequence = time, so each candidate is its own event; the earliest per
+      key wins (ties: by name). Officers can't disagree once synced.
+    - **Sources:** officers' clients scan (at most every 10 s, after the login sync) the roster,
+      crafters, attunements, bank goals, this and last week's scores and honor, and the
+      ledger's first kills and runs. What only the player's client sees is reported with
+      `ACHR` (level-up to the cap with its exact time, PvP rank, lifetime honorable kills,
+      battleground wins with the guild members on the team), resent until `ACHACK`.
+    - **Before GMS:** an officer client's first scan gives achievements players already had
+      (levels, professions, attunements, member counts) to all of them, `pre` with time 0,
+      shown as "before GMS". Kills, runs, weeks and goals come from the ledger, so they're real
+      firsts.
+    - **Raiders:** snapshots carry `ac = { [key] = "time;who;count;extra" }` (no group names, to
+      keep it small).
+    - **New firsts** (from the last 10 minutes): a card for everyone with GMS online (click opens
+      the tab), and one guild chat line "[GMS] Guild first! ..." from the officer whose record
+      won (feature `achAnnounce`, on), once per achievement.
+    - **Achievements tab** (feature `achievements`, on; everyone): by group, earned or "Nobody
+      yet", with who, when and the group in the tooltip; filter all / earned / still open.
+      `/gms achievements` or `/gms ach`.
+    - `/gms debug` says whether this client has the PvP rank, honorable kill and battleground
+      winner functions.
 
 ## Later
 Planned:

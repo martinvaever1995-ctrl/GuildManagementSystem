@@ -100,7 +100,7 @@ end
 -------------------------------------------------------------------------------
 local main
 local Effort, Me, Rules, LootTab, Log, BankTab, Options, WishTab, CraftTab, AttuneTab, LayerTab, PrioTab, AnalyticsTab,
-    RecruitTab = {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}
+    RecruitTab, AchTab = {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}
 
 local SIDEBAR_W = 150
 local CONTENT_W = 480
@@ -117,6 +117,7 @@ local NAV = {
     { page = 10, label = "Attunements", icon = "attune", feature = "attune" },
     { page = 11, label = "Layers", icon = "layers", feature = "layers" },
     { page = 13, label = "Analytics", icon = "analytics", feature = "analytics" },
+    { page = 15, label = "Achievements", icon = "achieve", feature = "achievements" },
     { page = 14, label = "Recruiter", icon = "recruit", feature = "recruiter", show = function() return AF.Recruiter:CanUse() end },
     { page = 4, label = "Loot history", icon = "loot", officer = true },
     { page = 12, label = "Priorities", icon = "loot", officer = true, feature = "lootPrio" },
@@ -133,7 +134,7 @@ local function CreateMain()
     main = Theme.Window("GMSMain", "", SIDEBAR_W + CONTENT_W, 584)
     main.panels = {}
     for i, page in ipairs({ Effort, Me, Rules, LootTab, Log, BankTab, Options, WishTab, CraftTab, AttuneTab, LayerTab, PrioTab,
-        AnalyticsTab, RecruitTab }) do
+        AnalyticsTab, RecruitTab, AchTab }) do
         local panel = CreateFrame("Frame", nil, main)
         panel:SetPoint("TOPLEFT", SIDEBAR_W, -25)
         panel:SetPoint("BOTTOMRIGHT")
@@ -184,6 +185,7 @@ function UI:ShowBank() self:ShowMain(6) end
 function UI:ShowLog() self:ShowMain(5) end
 function UI:ShowLootHistory() self:ShowMain(4) end
 function UI:ShowAnalytics() self:ShowMain(13) end
+function UI:ShowAchievements() self:ShowMain(15) end
 function UI:ShowRecruiter()
     if not AF.Recruiter:CanUse() then
         return AF:Print("The recruiter needs the Recruiter feature (guild setup) and a rank that may invite.")
@@ -2774,6 +2776,122 @@ AF:On("RECRUIT_UPDATED", function()
     if Visible(RecruitTab) then RecruitTab:Refresh() end
 end)
 
+-------------------------------------------------------------------------------
+--  Achievements tab: guild firsts, earned or still open
+-------------------------------------------------------------------------------
+local achFilter = "all"
+local ACH_FILTERS = { "all", "won", "open" }
+local ACH_FILTER_TEXT = { all = "Show: all", won = "Show: earned", open = "Show: still open" }
+
+function AchTab:Build(panel)
+    self.panel = panel
+    self.summary = Theme.Text(panel, 12, C.bright)
+    self.summary:SetPoint("TOPLEFT", 16, -16)
+    self.filter = Theme.Button(panel, ACH_FILTER_TEXT.all, 120, 22)
+    self.filter:SetPoint("TOPRIGHT", -16, -12)
+    self.filter:SetScript("OnClick", function()
+        for i, key in ipairs(ACH_FILTERS) do
+            if key == achFilter then achFilter = ACH_FILTERS[i % #ACH_FILTERS + 1] break end
+        end
+        self:Refresh()
+    end)
+    self.list = Theme.List(panel, {
+        left = 14, top = -42, rows = 21, rowHeight = 22,
+        emptyText = "Nothing here yet.",
+        columns = {
+            { key = "name", label = "Achievement", width = 196 },
+            { key = "who", label = "Won by", width = 170 },
+            { key = "when", label = "When", width = 80 },
+        },
+        render = function(row, d)
+            if d.header then
+                row.cells.name:SetText(d.header:upper())
+                row.cells.name:SetTextColor(Theme.Accent())
+                row.cells.who:SetText(d.note or "")
+                row.cells.who:SetTextColor(unpack(C.dim))
+                row.cells.when:SetText("")
+                return
+            end
+            local w = d.w
+            row.cells.name:SetText(d.name)
+            row.cells.name:SetTextColor(unpack(w and C.bright or C.dim))
+            if w then
+                row.cells.who:SetText(AF.Achievements.WinnerText(w))
+                if w.n ~= "group" and w.n ~= "guild" and not w.pre then
+                    local member = AF.Standings:All()[w.n]
+                    row.cells.who:SetTextColor(ClassColor(member and member.classFile))
+                else
+                    row.cells.who:SetTextColor(unpack(C.text))
+                end
+                row.cells.when:SetText(w.t > 0 and date("%Y-%m-%d", w.t) or "-")
+            else
+                row.cells.who:SetText("Nobody yet")
+                row.cells.who:SetTextColor(unpack(C.faint or C.dim))
+                row.cells.when:SetText("")
+            end
+            row.cells.when:SetTextColor(unpack(C.dim))
+        end,
+        onRowEnter = function(row, d)
+            if d.header then return end
+            local w = d.w
+            GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
+            GameTooltip:AddLine(d.name)
+            GameTooltip:AddLine(d.desc, 0.85, 0.85, 0.87, true)
+            if w then
+                GameTooltip:AddLine(" ")
+                GameTooltip:AddDoubleLine("Won by", AF.Achievements.WinnerText(w), 0.8, 0.8, 0.8, 1, 1, 1)
+                if w.t > 0 then GameTooltip:AddDoubleLine("When", date("%Y-%m-%d %H:%M", w.t), 0.8, 0.8, 0.8, 1, 1, 1) end
+                if w.p and #w.p > 0 then
+                    local names = {}
+                    for i = 1, math.min(#w.p, 40) do table.insert(names, AF:ShortName(w.p[i])) end
+                    GameTooltip:AddLine(" ")
+                    GameTooltip:AddLine(table.concat(names, ", ") .. (#w.p > 40 and (" and %d more"):format(#w.p - 40) or ""),
+                        0.85, 0.85, 0.87, true)
+                end
+                if w.pre then
+                    GameTooltip:AddLine(" ")
+                    GameTooltip:AddLine("They had it before the guild used GMS, so it's shared.", 0.55, 0.55, 0.57, true)
+                end
+            end
+            GameTooltip:Show()
+        end,
+    })
+end
+
+function AchTab:Refresh()
+    if not self.panel then return end
+    local won = AF.Achievements:Won()
+    local defs = AF.Achievements:Definitions(won)
+    local data, total, earned = {}, 0, 0
+    for _, group in ipairs(AF.Achievements.GROUPS) do
+        local rows, groupTotal, groupWon = {}, 0, 0
+        for _, d in ipairs(defs) do
+            if d.group == group then
+                local w = won[d.key]
+                groupTotal = groupTotal + 1
+                if w then groupWon = groupWon + 1 end
+                if achFilter == "all" or (achFilter == "won" and w) or (achFilter == "open" and not w) then
+                    table.insert(rows, { name = d.name, desc = d.desc, w = w })
+                end
+            end
+        end
+        total, earned = total + groupTotal, earned + groupWon
+        local note = ("%d / %d"):format(groupWon, groupTotal)
+        if group == "Raids" and groupTotal == 0 then note = "each boss appears with its first kill" end
+        if #rows > 0 or (group == "Raids" and achFilter ~= "won") then
+            table.insert(data, { header = group, note = note })
+            for _, r in ipairs(rows) do table.insert(data, r) end
+        end
+    end
+    self.summary:SetText(("Guild firsts: %d of %d earned"):format(earned, total))
+    self.filter.label:SetText(ACH_FILTER_TEXT[achFilter])
+    self.list:SetData(data)
+end
+
+AF:On("ACHIEVEMENTS_UPDATED", function()
+    if Visible(AchTab) then AchTab:Refresh() end
+end)
+
 StaticPopupDialogs.GMS_ATTUNE_REMOVE = {
     text = "Remove the %s attunement for the whole guild?",
     button1 = REMOVE,
@@ -3476,6 +3594,7 @@ local function RefreshAll()
     if Visible(Log) then Log:Refresh() end
     if Visible(LootTab) then LootTab:Refresh() end
     if Visible(AnalyticsTab) then AnalyticsTab:Refresh() end
+    if Visible(AchTab) then AchTab:Refresh() end
     RefreshLoot()
 end
 
@@ -3908,7 +4027,7 @@ local function RefreshSetup()
 end
 
 local function CreateSetup()
-    setup = Theme.Window("GMSSetup", "Guild setup", 460, 672, 40)
+    setup = Theme.Window("GMSSetup", "Guild setup", 460, 724, 40)
     local y = -36
     local function Heading(text)
         local h = Theme.Label(setup, text)
@@ -4160,6 +4279,16 @@ end
 -------------------------------------------------------------------------------
 local WISH_SHOWN = 20
 local wishCard
+
+local ACH_SHOWN = 25
+local achCard
+
+-- A new guild first (Achievements.lua); click opens the Achievements tab.
+function UI:AchievementCard(text)
+    if not achCard then achCard = CreateCard("GMSAchievement", "Guild achievement", ACH_SHOWN, function() UI:ShowAchievements() end) end
+    achCard:Present(text)
+    if SOUNDKIT and SOUNDKIT.UI_EPICLOOT_TOAST then pcall(PlaySound, SOUNDKIT.UI_EPICLOOT_TOAST, "Master") end
+end
 
 function UI:WishDrop(link, rank)
     if not wishCard then wishCard = CreateCard("GMSWishDrop", "From your wishlist", WISH_SHOWN) end

@@ -5,8 +5,8 @@
 local ADDON_NAME, AF = ...
 _G.GuildManagementSystem = AF
 
-AF.VERSION = 30400          -- major * 10000 + minor * 100 + patch; bump with ## Version
-AF.VERSION_STRING = "3.4.0"
+AF.VERSION = 30500          -- major * 10000 + minor * 100 + patch; bump with ## Version
+AF.VERSION_STRING = "3.5.0"
 AF.DISCORD = "https://discord.gg/U4UCtfRgmE"
 AF.PREFIX = "GuildMgmtSys"  -- addon message prefix (max 16 chars)
 AF.PREFIX_BULK = "GuildMgmtSysBk"   -- the slow lane for large data (Comm.lua)
@@ -420,6 +420,10 @@ function AF:DebugLines()
     local craftApi, craftWindow, myRecipes, crafters = self.Professions.ApiReport()
     Add("Professions: recipe API %s | enchanting window API: %s | your recipes: %d | characters known: %d",
         craftApi, craftWindow and "yes" or "no", myRecipes, crafters)
+    local rankApi, hkApi, bgApi = self.Achievements.ApiReport()
+    Add("Achievements: %s | PvP rank: %s | honorable kills: %s | battleground winner: %s",
+        self.Config:Feature("achievements") and "on" or "off", rankApi and "yes" or "NO", hkApi and "yes" or "NO",
+        bgApi and "yes" or "NO")
     local logApi, saved = self.History.ApiReport()
     Add("Guild event log: %s | events saved: %d", logApi and "yes" or "NO (no member history)", saved)
     local whoApi, inviteApi, canInvite = self.Recruiter.ApiReport()
@@ -469,6 +473,7 @@ local HELP = {
     "/gms attune - who in the guild is attuned to which raid (officers add or remove attunements there)",
     "/gms layers - which layer guild members are on, and who to whisper for an invite",
     "/gms analytics (or /gms stats) - the guild in numbers: classes, levels, ranks, professions, attunements, effort",
+    "/gms achievements (or /gms ach) - guild firsts in PvE and PvP: who got there first",
     "/gms crafters [item] - who in the guild can craft something; without a search, everyone's professions",
     "/gms wish [shift-click item] - your wishlist (up to 10 items, ranked; only officers see it), or add an item to it",
     "/gms bench add|remove <name>, /gms bench list|clear - players on your bench get credit for guild kills you record (officers)",
@@ -594,6 +599,8 @@ commands.rules = function() AF.UI:ShowRules() end
 commands.attune = function() AF.UI:ShowAttunements() end
 commands.layers = function() AF.UI:ShowLayers() end
 commands.analytics = function() AF.UI:ShowAnalytics() end
+commands.achievements = function() AF.UI:ShowAchievements() end
+commands.ach = commands.achievements
 commands.stats = commands.analytics
 commands.layer = commands.layers
 commands.invite = function() AF.UI:ShowInvites() end
