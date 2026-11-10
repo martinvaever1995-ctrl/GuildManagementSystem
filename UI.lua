@@ -99,8 +99,8 @@ end
 --  Main window: tabs
 -------------------------------------------------------------------------------
 local main
-local Effort, Me, Rules, LootTab, Log, BankTab, Options, WishTab, CraftTab, AttuneTab, LayerTab, PrioTab =
-    {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}
+local Effort, Me, Rules, LootTab, Log, BankTab, Options, WishTab, CraftTab, AttuneTab, LayerTab, PrioTab, AnalyticsTab,
+    RecruitTab = {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}
 
 local SIDEBAR_W = 150
 local CONTENT_W = 480
@@ -116,6 +116,8 @@ local NAV = {
     { page = 9, label = "Crafters", icon = "craft", feature = "crafters" },
     { page = 10, label = "Attunements", icon = "attune", feature = "attune" },
     { page = 11, label = "Layers", icon = "layers", feature = "layers" },
+    { page = 13, label = "Analytics", icon = "analytics", feature = "analytics" },
+    { page = 14, label = "Recruiter", icon = "recruit", feature = "recruiter", show = function() return AF.Recruiter:CanUse() end },
     { page = 4, label = "Loot history", icon = "loot", officer = true },
     { page = 12, label = "Priorities", icon = "loot", officer = true, feature = "lootPrio" },
     { page = 5, label = "Log", icon = "log", officer = true },
@@ -130,7 +132,8 @@ end
 local function CreateMain()
     main = Theme.Window("GMSMain", "", SIDEBAR_W + CONTENT_W, 584)
     main.panels = {}
-    for i, page in ipairs({ Effort, Me, Rules, LootTab, Log, BankTab, Options, WishTab, CraftTab, AttuneTab, LayerTab, PrioTab }) do
+    for i, page in ipairs({ Effort, Me, Rules, LootTab, Log, BankTab, Options, WishTab, CraftTab, AttuneTab, LayerTab, PrioTab,
+        AnalyticsTab, RecruitTab }) do
         local panel = CreateFrame("Frame", nil, main)
         panel:SetPoint("TOPLEFT", SIDEBAR_W, -25)
         panel:SetPoint("BOTTOMRIGHT")
@@ -180,6 +183,13 @@ function UI:ToggleOptions() self:ShowMain(7) end
 function UI:ShowBank() self:ShowMain(6) end
 function UI:ShowLog() self:ShowMain(5) end
 function UI:ShowLootHistory() self:ShowMain(4) end
+function UI:ShowAnalytics() self:ShowMain(13) end
+function UI:ShowRecruiter()
+    if not AF.Recruiter:CanUse() then
+        return AF:Print("The recruiter needs the Recruiter feature (guild setup) and a rank that may invite.")
+    end
+    self:ShowMain(14)
+end
 
 -- The Priorities page, with an item ready to edit.
 function UI:ShowPriorities(link)
@@ -917,11 +927,8 @@ end
 -------------------------------------------------------------------------------
 --  Bank tab: the wanted list
 -------------------------------------------------------------------------------
-local function ItemIDFrom(text)
-    text = (text or ""):match("^%s*(.-)%s*$")
-    local fromLink = text:find("|Hitem:", 1, true) and C_Item.GetItemInfoInstant(text)
-    return fromLink or tonumber(text)
-end
+-- A shift-clicked link, a Wowhead address or an item ID.
+local function ItemIDFrom(text) return AF:ItemID(text) end
 
 function BankTab:Build(panel)
     self.panel = panel
@@ -1799,6 +1806,974 @@ AF:On("LAYERS_UPDATED", function()
     if Visible(LayerTab) then LayerTab:Refresh() end
 end)
 
+-------------------------------------------------------------------------------
+--  Analytics tab: the guild in numbers. Roster: everyone in the guild (the game's
+--  roster). Guild: what GMS collects (crafters, attunements, effort), and for
+--  officers this week from the ledger.
+-------------------------------------------------------------------------------
+local analyticsView, classFilter = "roster", "all"
+local CLASSIC_CLASSES = { "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST", "SHAMAN", "MAGE", "WARLOCK", "DRUID" }
+local FULL = { label = 110, bar = 250, x = 16 }         -- one column
+local HALF = { label = 82, bar = 70, x = { 16, 250 } }    -- two columns
+local TIP_NAMES = 40
+
+local function ClassName(file)
+    return (LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[file]) or file
+end
+
+local function Percent(n, total)
+    return total > 0 and ("%d%%"):format(n / total * 100 + 0.5) or "-"
+end
+
+-- The level cap: the game's, or the highest level in the guild if that's higher.
+local function MaxLevel(members)
+    local max = (GetMaxLevelForPlayerExpansion and GetMaxLevelForPlayerExpansion()) or MAX_PLAYER_LEVEL or 0
+    if type(max) ~= "number" then max = 0 end
+    for _, m in pairs(members) do
+        if (m.level or 0) > max then max = m.level end
+    end
+    return max
+end
+
+-- Names in a tooltip, a few per line.
+local function NamesTip(owner, title, names)
+    GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+    GameTooltip:AddLine(title)
+    table.sort(names)
+    local shown = {}
+    for i = 1, math.min(#names, TIP_NAMES) do table.insert(shown, AF:ShortName(names[i])) end
+    for i = 1, #shown, 4 do
+        GameTooltip:AddLine(table.concat(shown, ", ", i, math.min(i + 3, #shown)), 0.85, 0.85, 0.87)
+    end
+    if #names > TIP_NAMES then GameTooltip:AddLine(("and %d more"):format(#names - TIP_NAMES), 0.55, 0.55, 0.57) end
+    if #names == 0 then GameTooltip:AddLine("Nobody", 0.55, 0.55, 0.57) end
+    GameTooltip:Show()
+end
+
+-- A view: headings, notes and bar rows placed top to bottom per column, reused
+-- on every refresh.
+local function NewView(panel)
+    local view = CreateFrame("Frame", nil, panel)
+    view:SetPoint("TOPLEFT", 0, -40)
+    view:SetPoint("BOTTOMRIGHT")
+    view.pool = { heading = {}, note = {}, full = {}, half = {} }
+    return view
+end
+
+local function Take(view, kind)
+    local pool = view.pool[kind]
+    view.used[kind] = (view.used[kind] or 0) + 1
+    local item = pool[view.used[kind]]
+    if item then
+        item:ClearAllPoints()
+        item:Show()
+        return item
+    end
+    if kind == "heading" then
+        item = Theme.Label(view, "")
+    elseif kind == "note" then
+        item = Theme.Text(view, 11, C.dim)
+        item:SetWordWrap(true)
+    else
+        local size = kind == "full" and FULL or HALF
+        item = CreateFrame("Frame", nil, view)
+        item:SetSize(size.label + size.bar + 70, 16)
+        item.label = Theme.Text(item, 11)
+        item.label:SetPoint("LEFT")
+        item.label:SetWidth(size.label)
+        item.label:SetJustifyH("LEFT")
+        item.label:SetWordWrap(false)
+        item.bar = Theme.Bar(item, size.bar, 8)
+        item.bar:SetPoint("LEFT", size.label + 4, 0)
+        item.value = Theme.Text(item, 11, C.dim)
+        item.value:SetPoint("LEFT", item.bar, "RIGHT", 6, 0)
+        item:EnableMouse(true)
+        item:SetScript("OnEnter", function(self)
+            if self.names then NamesTip(self, self.title, self.names) end
+        end)
+        item:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    end
+    table.insert(pool, item)
+    return item
+end
+
+-- blocks: { { col = 1/2 (nil: full width), heading, note, rows = { { label, color, fraction,
+-- value, names, title } } } }
+local function Layout(view, blocks)
+    view.used = {}
+    local y = { -4, -4 }
+    for _, block in ipairs(blocks) do
+        local col = block.col or 1
+        local x = block.col and HALF.x[col] or FULL.x
+        local width = block.col and 216 or 448
+        if block.col == nil then y[2] = math.min(y[1], y[2]) y[1] = y[2] end
+        local h = Take(view, "heading")
+        h:SetPoint("TOPLEFT", x, y[col])
+        h:SetText(block.heading:upper())
+        y[col] = y[col] - 20
+        if block.note then
+            local note = Take(view, "note")
+            note:SetPoint("TOPLEFT", x + 2, y[col])
+            note:SetWidth(width)
+            note:SetText(block.note)
+            y[col] = y[col] - note:GetStringHeight() - 6
+        end
+        for _, r in ipairs(block.rows or {}) do
+            local row = Take(view, block.col and "half" or "full")
+            row:SetPoint("TOPLEFT", x + 2, y[col])
+            row.label:SetText(r.label)
+            if r.color then row.label:SetTextColor(unpack(r.color)) else row.label:SetTextColor(unpack(C.text)) end
+            row.bar:SetValue(r.fraction or 0)
+            if r.barColor then row.bar:SetColor(unpack(r.barColor)) else row.bar:SetColor(nil) end
+            row.value:SetText(r.value or "")
+            row.names, row.title = r.names, r.title or r.label
+            y[col] = y[col] - 17
+        end
+        y[col] = y[col] - 10
+        if block.col == nil then y[2] = y[1] end
+    end
+    for kind, pool in pairs(view.pool) do
+        for i = (view.used[kind] or 0) + 1, #pool do pool[i]:Hide() end
+    end
+end
+
+-------------------------------------------------------------------------------
+--  Analytics: the Needs window (officers set which classes the guild wants)
+-------------------------------------------------------------------------------
+local needsWindow
+
+local function CreateNeeds()
+    needsWindow = Theme.Window("GMSNeeds", "Looking for", 300, 112 + 26 * #CLASSIC_CLASSES)
+    local hint = Theme.Text(needsWindow, 11, C.dim)
+    hint:SetPoint("TOPLEFT", 16, -34)
+    hint:SetWidth(268)
+    hint:SetWordWrap(true)
+    hint:SetText("How many of each class the guild wants. Shown in Analytics for everyone.")
+    needsWindow.boxes = {}
+    for i, file in ipairs(CLASSIC_CLASSES) do
+        local label = Theme.Text(needsWindow, 12)
+        label:SetPoint("TOPLEFT", 18, -66 - (i - 1) * 26)
+        label:SetText(ClassName(file))
+        label:SetTextColor(ClassColor(file))
+        local box = Theme.EditBox(needsWindow, 40)
+        box:SetPoint("TOPLEFT", 140, -62 - (i - 1) * 26)
+        box:SetNumeric(true)
+        box:SetMaxLetters(2)
+        needsWindow.boxes[file] = box
+    end
+    needsWindow.note = Theme.EditBox(needsWindow, 268)
+    needsWindow.note:SetPoint("TOPLEFT", 16, -70 - #CLASSIC_CLASSES * 26)
+    needsWindow.note:SetMaxLetters(100)
+    needsWindow.noteHint = Theme.Text(needsWindow.note, 11, C.dim)
+    needsWindow.noteHint:SetPoint("LEFT", 8, 0)
+    needsWindow.noteHint:SetText("A note, e.g. 2 healers for Molten Core")
+    needsWindow.note:SetScript("OnTextChanged", function(b) needsWindow.noteHint:SetShown(b:GetText() == "") end)
+    local save = Theme.Button(needsWindow, "Save", 90, 24)
+    save:SetPoint("BOTTOMRIGHT", -14, 12)
+    save:SetScript("OnClick", function()
+        local needs = {}
+        for file, box in pairs(needsWindow.boxes) do
+            local n = tonumber(box:GetText())
+            if n and n > 0 then needs[file] = n end
+        end
+        local ok, err = AF.Config:SetNeeds(needs, needsWindow.note:GetText())
+        if not ok then return AF:Print(err) end
+        needsWindow:Hide()
+    end)
+end
+
+function UI:ShowNeeds()
+    if not needsWindow then CreateNeeds() end
+    local needs = AF.Config:Get("needs")
+    for file, box in pairs(needsWindow.boxes) do box:SetText(needs[file] and tostring(needs[file]) or "") end
+    needsWindow.note:SetText(AF.Config:Get("needsNote") or "")
+    needsWindow:Show()
+end
+
+-- "2 Priests, 1 Rogue" (or nil).
+local function NeedsText()
+    local parts = {}
+    for _, file in ipairs(CLASSIC_CLASSES) do
+        local n = AF.Config:Get("needs")[file]
+        if n then table.insert(parts, ("%d %s"):format(n, ClassName(file))) end
+    end
+    for file, n in pairs(AF.Config:Get("needs")) do
+        if not tContains(CLASSIC_CLASSES, file) then table.insert(parts, ("%d %s"):format(n, ClassName(file))) end
+    end
+    local note = AF.Config:Get("needsNote")
+    if note and note ~= "" then table.insert(parts, note) end
+    return #parts > 0 and table.concat(parts, ", ") or nil
+end
+
+-------------------------------------------------------------------------------
+--  The numbers
+-------------------------------------------------------------------------------
+local function RosterBlocks()
+    local members = AF.Standings:All()
+    local maxLevel = MaxLevel(members)
+    local total, online, atMax, week, month, lastKnown, highest = 0, 0, 0, 0, 0, false, 0
+    local classes, brackets, ranks = {}, {}, {}
+    for _, file in ipairs(CLASSIC_CLASSES) do classes[file] = {} end
+    for name, m in pairs(members) do
+        total = total + 1
+        local level = m.level or 0
+        local isMax = maxLevel > 0 and level >= maxLevel
+        if m.online then online = online + 1 end
+        if isMax then atMax = atMax + 1 end
+        highest = math.max(highest, level)
+        -- Some clients say 0 days for everyone offline: only trust it once someone is older.
+        if m.offlineDays and not m.online and m.offlineDays > 0 then lastKnown = true end
+        if m.offlineDays and m.offlineDays < 7 then week = week + 1 end
+        if m.offlineDays and m.offlineDays < 30 then month = month + 1 end
+        local counted = classFilter == "all" or (classFilter == "max" and isMax) or (classFilter == "online" and m.online)
+        if counted and m.classFile then
+            classes[m.classFile] = classes[m.classFile] or {}
+            table.insert(classes[m.classFile], name)
+        end
+        if level > 0 then
+            local key = isMax and maxLevel or math.floor(level / 10) * 10
+            brackets[key] = brackets[key] or {}
+            table.insert(brackets[key], name)
+        end
+        if m.rankIndex then
+            ranks[m.rankIndex] = ranks[m.rankIndex] or { name = m.rankName or ("Rank " .. m.rankIndex), list = {} }
+            table.insert(ranks[m.rankIndex].list, name)
+        end
+    end
+
+    local summary = ("%d members  ·  %d online now  ·  %d at level %d"):format(total, online, atMax, maxLevel)
+    local needs = NeedsText()
+    if highest < maxLevel then summary = summary .. (" (highest %d)"):format(highest) end
+    if lastKnown then
+        summary = summary .. ("\n%d played in the last 7 days  ·  %d in the last 30 days"):format(week, month)
+    end
+    if AF.History.Available() and #AF.History:List() > 0 then
+        local joined, left = AF.History:Counts(GetServerTime() - 30 * 86400)
+        summary = summary .. ("\nLast 30 days: %d joined, %d left"):format(joined, left)
+    end
+    if needs then summary = summary .. "\n|cffff9933Looking for:|r " .. needs end
+
+    -- Classes, biggest first.
+    local classList, most, counted = {}, 1, 0
+    for file, names in pairs(classes) do
+        table.insert(classList, { file = file, names = names })
+        most = math.max(most, #names)
+        counted = counted + #names
+    end
+    table.sort(classList, function(a, b)
+        if #a.names ~= #b.names then return #a.names > #b.names end
+        return ClassName(a.file) < ClassName(b.file)
+    end)
+    local filterText = { all = "all members", max = "level " .. maxLevel, online = "online now" }
+    local classRows = {}
+    for _, c in ipairs(classList) do
+        local r, g, b = ClassColor(c.file)
+        table.insert(classRows, { label = ClassName(c.file), color = { r, g, b }, barColor = { r, g, b },
+            fraction = #c.names / most, value = ("%d  ·  %s"):format(#c.names, Percent(#c.names, counted))
+                .. ((AF.Config:Get("needs")[c.file] or 0) > 0 and ("  ·  |cffff9933need %d|r"):format(AF.Config:Get("needs")[c.file]) or ""),
+            names = c.names, title = ("%s (%s)"):format(ClassName(c.file), filterText[classFilter]) })
+    end
+
+    -- Levels in steps of 10, the cap on its own.
+    local levelRows, keys, biggest = {}, {}, 1
+    for key, names in pairs(brackets) do
+        table.insert(keys, key)
+        biggest = math.max(biggest, #names)
+    end
+    table.sort(keys, function(a, b) return a > b end)
+    for _, key in ipairs(keys) do
+        local label = key == maxLevel and tostring(maxLevel)
+            or ("%d-%d"):format(math.max(1, key), math.min(key + 9, maxLevel - 1))
+        local names = brackets[key]
+        table.insert(levelRows, { label = label, fraction = #names / biggest, value = tostring(#names),
+            names = names, title = "Level " .. label })
+    end
+
+    local rankRows, rankKeys, rankMost = {}, {}, 1
+    for index, rank in pairs(ranks) do
+        table.insert(rankKeys, index)
+        rankMost = math.max(rankMost, #rank.list)
+    end
+    table.sort(rankKeys)
+    for _, index in ipairs(rankKeys) do
+        local rank = ranks[index]
+        table.insert(rankRows, { label = rank.name, fraction = #rank.list / rankMost, value = tostring(#rank.list),
+            names = rank.list, title = rank.name })
+    end
+
+    return {
+        { heading = "Members", note = total > 0 and summary or "The guild roster hasn't loaded yet." },
+        { heading = "Classes · " .. filterText[classFilter], rows = classRows },
+        { col = 1, heading = "Levels", rows = levelRows },
+        { col = 2, heading = "Ranks", rows = rankRows },
+    }
+end
+
+local function GuildBlocks()
+    local blocks = {}
+    local roster = AF.Standings:All()
+
+    -- Professions, from the crafters directory.
+    if AF.Config:Feature("crafters") then
+        local byProf, people, cap = {}, {}, 0
+        for _, p in ipairs(AF.Professions:Players()) do
+            byProf[p.prof] = byProf[p.prof] or { names = {}, seen = {}, top = {} }
+            local entry = byProf[p.prof]
+            if not entry.seen[p.name] then
+                entry.seen[p.name] = true
+                table.insert(entry.names, p.name)
+            end
+            people[p.name] = true
+            cap = math.max(cap, p.m or 0)
+            entry.ranks = entry.ranks or {}
+            entry.ranks[p.name] = math.max(entry.ranks[p.name] or 0, p.r or 0)
+        end
+        local list, most, count = {}, 1, 0
+        for prof, e in pairs(byProf) do
+            local maxed = 0
+            for _, rank in pairs(e.ranks) do
+                if cap > 0 and rank >= cap then maxed = maxed + 1 end
+            end
+            table.insert(list, { prof = prof, names = e.names, maxed = maxed })
+            most = math.max(most, #e.names)
+        end
+        for _ in pairs(people) do count = count + 1 end
+        table.sort(list, function(a, b)
+            if #a.names ~= #b.names then return #a.names > #b.names end
+            return a.prof < b.prof
+        end)
+        local rows = {}
+        for _, p in ipairs(list) do
+            table.insert(rows, { label = p.prof,
+                fraction = #p.names / most, value = cap > 0 and ("%d  ·  %d at %d"):format(#p.names, p.maxed, cap) or tostring(#p.names),
+                names = p.names, title = p.prof })
+        end
+        table.insert(blocks, { col = 1, heading = "Professions",
+            note = ("From %d characters with GMS who opened a profession window."):format(count), rows = rows })
+    end
+
+    -- Attunements: attuned of those we know about.
+    if AF.Config:Feature("attune") then
+        local players = AF.Attunements:Players()
+        local rows = {}
+        for _, a in ipairs(AF.Attunements:List()) do
+            local yes, known = {}, 0
+            for _, name in ipairs(players) do
+                local status = AF.Attunements:Status(name, a.key)
+                if status ~= nil then known = known + 1 end
+                if status then table.insert(yes, name) end
+            end
+            table.insert(rows, { label = a.s or a.n, fraction = known > 0 and #yes / known or 0,
+                value = ("%d / %d"):format(#yes, known), names = yes, title = a.n .. ": attuned" })
+        end
+        table.insert(blocks, { col = 1, heading = "Attunements",
+            note = ("Of %d characters with GMS."):format(#players), rows = rows })
+    end
+
+    -- Effort: per player (mains), in quarters of the maximum.
+    local maxEffort = MaxEffort()
+    local bands = { { 0, 0, "0" } }
+    for i = 1, 4 do
+        local low, high = math.floor(maxEffort * (i - 1) / 4) + 1, math.floor(maxEffort * i / 4)
+        table.insert(bands, { low, high, ("%d-%d"):format(low, high) })
+    end
+    local inBand, players, withEffort, sum = {}, 0, 0, 0
+    for i = 1, #bands do inBand[i] = {} end
+    for name in pairs(roster) do
+        if AF.Standings:MainOf(name) == name then
+            local m = AF.Standings:Get(name)
+            local effort = m and m.effort or 0
+            players = players + 1
+            if effort > 0 then
+                withEffort = withEffort + 1
+                sum = sum + effort
+            end
+            for i, band in ipairs(bands) do
+                if effort >= band[1] and effort <= band[2] then table.insert(inBand[i], name) break end
+            end
+        end
+    end
+    local effortRows, mostBand = {}, 1
+    for i = 1, #bands do mostBand = math.max(mostBand, #inBand[i]) end
+    for i = #bands, 1, -1 do
+        table.insert(effortRows, { label = bands[i][3], fraction = #inBand[i] / mostBand, value = tostring(#inBand[i]),
+            names = inBand[i], title = "Effort " .. bands[i][3] })
+    end
+    table.insert(blocks, { col = 2, heading = "Effort",
+        note = ("%d of %d players have effort; average %d."):format(withEffort, players,
+            withEffort > 0 and math.floor(sum / withEffort + 0.5) or 0), rows = effortRows })
+
+    -- This week, from the ledger (officers).
+    if AF.Ledger:CanRecord() then
+        local s = AF.Ledger:WeekStats(AF.Standings.CurrentWeek())
+        table.insert(blocks, { col = 2, heading = "This week (officers)", note = table.concat({
+            ("%d guild kills"):format(s.kills),
+            ("%d items awarded (+%d to the guild)"):format(s.awards, s.forGuild),
+            ("%d dungeon runs"):format(s.runs),
+            ("Bank deposits worth %s"):format(Gold(s.gold)),
+            ("%d players with points"):format(s.players),
+        }, "\n") })
+    end
+    return blocks
+end
+
+-------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
+--  Analytics: Members (every member in a list, alts under their main)
+-------------------------------------------------------------------------------
+local memberSort, memberDesc, groupAlts = "name", false, true
+
+local function LastSeen(m)
+    if m.online then return "online", 0 end
+    if m.offlineDays and m.offlineDays > 0 then
+        local d = m.offlineDays
+        if d < 1 then return ("%d h"):format(d * 24 + 0.5), d end
+        return ("%d d"):format(d + 0.5), d
+    end
+    return "offline", 9999
+end
+
+-- One row per member: { name, main, isAlt, m (roster), effort, onAlt (an online alt's name) }.
+local function MemberRows(filter)
+    local roster = AF.Standings:All()
+    local rows, byMain = {}, {}
+    for name, m in pairs(roster) do
+        local main = AF.Standings:MainOf(name)
+        if not roster[main] then main = name end           -- main not in the guild: show it on its own
+        local member = AF.Standings:Get(name)
+        local row = { name = name, main = main, isAlt = main ~= name, m = m, effort = member and member.effort or 0 }
+        byMain[main] = byMain[main] or { alts = {} }
+        if row.isAlt then table.insert(byMain[main].alts, row) else byMain[main].row = row end
+        table.insert(rows, row)
+    end
+    -- Online on an alt: show it on the main.
+    for _, group in pairs(byMain) do
+        if group.row and not group.row.m.online then
+            for _, alt in ipairs(group.alts) do
+                if alt.m.online then group.row.onAlt = alt.name end
+            end
+        end
+    end
+    local function Matches(row)
+        if filter == "" then return true end
+        local m = row.m
+        for _, text in ipairs({ AF:ShortName(row.name), AF:ShortName(row.main), m.classFile and ClassName(m.classFile) or "",
+            m.rankName or "", m.zone or "" }) do
+            if text:lower():find(filter, 1, true) then return true end
+        end
+        return false
+    end
+    local function Value(row)
+        local m = row.m
+        if memberSort == "level" then return m.level or 0 end
+        if memberSort == "class" then return m.classFile and ClassName(m.classFile) or "" end
+        if memberSort == "rank" then return m.rankIndex or 99 end
+        if memberSort == "last" then return select(2, LastSeen(m)) end
+        if memberSort == "effort" then return row.effort end
+        return AF:ShortName(row.name)
+    end
+    local function Before(a, b)
+        local x, y = Value(a), Value(b)
+        if x == y then return a.name < b.name end
+        if memberDesc then return x > y end
+        return x < y
+    end
+    local out = {}
+    if groupAlts then
+        local mains = {}
+        for _, group in pairs(byMain) do
+            local alts = {}
+            for _, alt in ipairs(group.alts) do
+                if Matches(alt) then table.insert(alts, alt) end
+            end
+            if group.row and (Matches(group.row) or #alts > 0) then
+                table.sort(alts, function(a, b) return a.name < b.name end)
+                group.row.altRows = alts
+                table.insert(mains, group.row)
+            end
+        end
+        table.sort(mains, Before)
+        for _, row in ipairs(mains) do
+            table.insert(out, row)
+            for _, alt in ipairs(row.altRows) do table.insert(out, alt) end
+        end
+    else
+        for _, row in ipairs(rows) do
+            if Matches(row) then table.insert(out, row) end
+        end
+        table.sort(out, Before)
+    end
+    return out
+end
+
+-- Every member as CSV, for a spreadsheet.
+local function MembersCSV()
+    local lines = { "name,main,level,class,rank,online,days_offline,effort" }
+    for _, row in ipairs(MemberRows("")) do
+        local m = row.m
+        table.insert(lines, ("%s,%s,%s,%s,%s,%s,%s,%d"):format(row.name, row.main, tostring(m.level or ""),
+            m.classFile or "", ((m.rankName or ""):gsub(",", " ")), m.online and "yes" or "no",
+            m.offlineDays and ("%.1f"):format(m.offlineDays) or "", row.effort))
+    end
+    return table.concat(lines, "\n"), #lines - 1
+end
+
+local function BuildMembers(tab, panel)
+    local view = CreateFrame("Frame", nil, panel)
+    view:SetPoint("TOPLEFT", 0, -40)
+    view:SetPoint("BOTTOMRIGHT")
+    view.search = Theme.EditBox(view, 160)
+    view.search:SetPoint("TOPLEFT", 14, -2)
+    local hint = Theme.Text(view.search, 11, C.dim)
+    hint:SetPoint("LEFT", 8, 0)
+    hint:SetText("Search name, class, rank, zone")
+    view.search:SetScript("OnTextChanged", function(b)
+        hint:SetShown(b:GetText() == "")
+        tab:Refresh()
+    end)
+    view.alts = Theme.Check(view, "Alts under their main", groupAlts, function(on)
+        groupAlts = on
+        tab:Refresh()
+    end)
+    view.alts:SetPoint("LEFT", view.search, "RIGHT", 12, 0)
+    local csv = Theme.Button(view, "Export CSV", 90, 22)
+    csv:SetPoint("TOPRIGHT", -16, -2)
+    csv:SetScript("OnClick", function()
+        local text, count = MembersCSV()
+        UI:ShowTextWindow("Members (CSV)", ("%d members. Ctrl+A, Ctrl+C, then paste into a spreadsheet."):format(count), text)
+    end)
+    view.list = Theme.List(view, {
+        left = 14, top = -32, rows = 18, rowHeight = 22,
+        emptyText = "The guild roster hasn't loaded yet.",
+        columns = {
+            { key = "name", label = "Name", width = 134 },
+            { key = "level", label = "Lvl", width = 30, justify = "RIGHT" },
+            { key = "class", label = "Class", width = 72 },
+            { key = "rank", label = "Rank", width = 84 },
+            { key = "last", label = "Last online", width = 84 },
+            { key = "effort", label = "Effort", width = 42, justify = "RIGHT" },
+        },
+        onHeader = function(key)
+            if memberSort == key then memberDesc = not memberDesc else memberSort, memberDesc = key, key == "effort" or key == "level" end
+            tab:Refresh()
+        end,
+        render = function(row, r)
+            local m = r.m
+            row.cells.name:SetText((r.isAlt and groupAlts and "   " or "") .. AF:ShortName(r.name))
+            row.cells.name:SetTextColor(ClassColor(m.classFile))
+            row.cells.level:SetText(m.level or "")
+            row.cells.class:SetText(m.classFile and ClassName(m.classFile) or "")
+            row.cells.class:SetTextColor(unpack(C.dim))
+            row.cells.rank:SetText(m.rankName or "")
+            row.cells.rank:SetTextColor(unpack(C.dim))
+            local seen = LastSeen(m)
+            if r.onAlt then seen = "on an alt" end
+            row.cells.last:SetText(seen)
+            if m.online or r.onAlt then row.cells.last:SetTextColor(0.31, 0.88, 0.65) else row.cells.last:SetTextColor(unpack(C.dim)) end
+            row.cells.effort:SetText(r.isAlt and "" or (r.effort > 0 and r.effort or "-"))
+        end,
+        onRowEnter = function(row, r)
+            local m = r.m
+            GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
+            GameTooltip:AddLine(AF:ShortName(r.name), ClassColor(m.classFile))
+            if r.isAlt then GameTooltip:AddLine("Alt of " .. AF:ShortName(r.main), 0.6, 0.6, 0.62) end
+            GameTooltip:AddLine(("Level %s %s  ·  %s"):format(m.level or "?", m.classFile and ClassName(m.classFile) or "", m.rankName or ""),
+                0.85, 0.85, 0.87)
+            if m.zone and m.zone ~= "" then GameTooltip:AddLine(m.zone, 0.85, 0.85, 0.87) end
+            if r.onAlt then GameTooltip:AddLine("Online as " .. AF:ShortName(r.onAlt), 0.31, 0.88, 0.65) end
+            GameTooltip:Show()
+        end,
+        onRowClick = function(r)
+            if (r.m.online or r.onAlt) and ChatFrame_SendTell then ChatFrame_SendTell(r.onAlt or r.name) end
+        end,
+    })
+    return view
+end
+
+-------------------------------------------------------------------------------
+--  Analytics: History (the guild event log, kept longer)
+-------------------------------------------------------------------------------
+local function BuildHistory(panel)
+    local view = CreateFrame("Frame", nil, panel)
+    view:SetPoint("TOPLEFT", 0, -40)
+    view:SetPoint("BOTTOMRIGHT")
+    view.info = Theme.Text(view, 11, C.dim)
+    view.info:SetPoint("TOPLEFT", 16, -4)
+    view.info:SetWidth(448)
+    view.list = Theme.List(view, {
+        left = 14, top = -24, rows = 19, rowHeight = 22,
+        emptyText = "Nothing yet. GMS saves the game's guild log as it reads it.",
+        columns = {
+            { key = "when", label = "When", width = 96 },
+            { key = "what", label = "What", width = 350 },
+        },
+        render = function(row, e)
+            row.cells.when:SetText(date("%Y-%m-%d", e.t))
+            row.cells.when:SetTextColor(unpack(C.dim))
+            row.cells.what:SetText(AF.History.Describe(e))
+            local good = e.k == "join" or e.k == "promote"
+            local bad = e.k == "quit" or e.k == "remove" or e.k == "demote"
+            if good then row.cells.what:SetTextColor(0.31, 0.88, 0.65)
+            elseif bad then row.cells.what:SetTextColor(1, 0.55, 0.45)
+            else row.cells.what:SetTextColor(unpack(C.text)) end
+        end,
+    })
+    return view
+end
+
+-------------------------------------------------------------------------------
+local VIEWS = { "roster", "members", "guild", "history" }
+local VIEW_TEXT = { roster = "Roster", members = "Members", guild = "Guild", history = "History" }
+local FILTERS = { "all", "max", "online" }
+local FILTER_TEXT = { all = "Classes: all", max = "Classes: max level", online = "Classes: online" }
+
+function AnalyticsTab:Build(panel)
+    self.panel = panel
+    self.viewButtons = {}
+    local previous
+    for _, view in ipairs(VIEWS) do
+        local b = Theme.Button(panel, VIEW_TEXT[view], view == "members" and 72 or 62, 22)
+        if previous then b:SetPoint("LEFT", previous, "RIGHT", 4, 0) else b:SetPoint("TOPLEFT", 14, -10) end
+        b:SetScript("OnClick", function()
+            analyticsView = view
+            if view == "history" then AF.History:Refresh() end
+            self:Refresh()
+        end)
+        self.viewButtons[view] = b
+        previous = b
+    end
+
+    -- Roster view: which members the class bars count, and the classes wanted (officers).
+    self.needsButton = Theme.Button(panel, "Needs", 54, 20)
+    self.needsButton:SetPoint("TOPRIGHT", -16, -11)
+    self.needsButton:SetScript("OnClick", function() UI:ShowNeeds() end)
+    self.filterButton = Theme.Button(panel, FILTER_TEXT.all, 120, 20)
+    self.filterButton:SetPoint("RIGHT", self.needsButton, "LEFT", -4, 0)
+    self.filterButton:SetScript("OnClick", function()
+        for i, key in ipairs(FILTERS) do
+            if key == classFilter then classFilter = FILTERS[i % #FILTERS + 1] break end
+        end
+        self:Refresh()
+    end)
+
+    self.roster = NewView(panel)
+    self.guild = NewView(panel)
+    self.members = BuildMembers(self, panel)
+    self.history = BuildHistory(panel)
+    -- Ask the game for a fresh roster when the tab opens.
+    panel:HookScript("OnShow", function() AF:RequestRoster() end)
+end
+
+function AnalyticsTab:Refresh()
+    if not self.panel then return end
+    if analyticsView == "history" and not AF.History.Available() then analyticsView = "roster" end
+    for _, view in ipairs(VIEWS) do
+        local b = self.viewButtons[view]
+        b:SetShown(view ~= "history" or AF.History.Available())
+        b.label:SetTextColor(unpack(view == analyticsView and C.bright or C.dim))
+        self[view]:SetShown(view == analyticsView)
+    end
+    local roster = analyticsView == "roster"
+    self.filterButton:SetShown(roster)
+    self.filterButton.label:SetText(FILTER_TEXT[classFilter])
+    self.needsButton:SetShown(roster and AF.Config:CanEdit())
+    if roster then
+        Layout(self.roster, RosterBlocks())
+    elseif analyticsView == "guild" then
+        Layout(self.guild, GuildBlocks())
+    elseif analyticsView == "members" then
+        self.members.list:SetData(MemberRows(self.members.search:GetText():lower()))
+        self.members.list:MarkSorted(memberSort)
+    else
+        local list = AF.History:List()
+        local joined, left = AF.History:Counts(GetServerTime() - 30 * 86400)
+        self.history.info:SetText(("%d events saved  ·  last 30 days: %d joined, %d left"):format(#list, joined, left))
+        self.history.list:SetData(list)
+    end
+end
+
+AF:On("HISTORY_UPDATED", function()
+    if Visible(AnalyticsTab) then AnalyticsTab:Refresh() end
+end)
+
+-------------------------------------------------------------------------------
+--  Recruiter tab: /who search, then one player per click (Recruiter.lua)
+-------------------------------------------------------------------------------
+local RECRUIT_STATUS = {
+    new = { "new", { 0.31, 0.88, 0.65 } },
+    contacted = { "contacted", { 0.55, 0.55, 0.57 } },
+    blocked = { "blacklist", { 1, 0.33, 0.33 } },
+    member = { "in guild", { 0.55, 0.55, 0.57 } },
+}
+local templatesWindow
+
+local function CreateTemplates()
+    templatesWindow = Theme.Window("GMSTemplates", "Whisper templates", 460, 120 + 34 * AF.Recruiter.MAX_TEMPLATES)
+    local hint = Theme.Text(templatesWindow, 11, C.dim)
+    hint:SetPoint("TOPLEFT", 16, -34)
+    hint:SetWidth(428)
+    hint:SetWordWrap(true)
+    hint:SetText("Shared by the whole guild. {player}, {guild}, {class}, {level} and {zone} are filled in for each player.")
+    templatesWindow.rows = {}
+    for i = 1, AF.Recruiter.MAX_TEMPLATES do
+        local name = Theme.EditBox(templatesWindow, 96)
+        name:SetPoint("TOPLEFT", 16, -60 - (i - 1) * 34)
+        name:SetMaxLetters(30)
+        local text = Theme.EditBox(templatesWindow, 316)
+        text:SetPoint("LEFT", name, "RIGHT", 6, 0)
+        text:SetMaxLetters(250)
+        templatesWindow.rows[i] = { name = name, text = text }
+    end
+    local save = Theme.Button(templatesWindow, "Save and send to the guild", 190, 24)
+    save:SetPoint("BOTTOMRIGHT", -14, 12)
+    save:SetScript("OnClick", function()
+        local list = {}
+        for _, row in ipairs(templatesWindow.rows) do
+            table.insert(list, { n = row.name:GetText(), t = row.text:GetText() })
+        end
+        local ok, err = AF.Config:SetTemplates(list)
+        if not ok then return AF:Print(err) end
+        templatesWindow:Hide()
+    end)
+    templatesWindow.save = save
+end
+
+function UI:ShowTemplates()
+    if not templatesWindow then CreateTemplates() end
+    local templates = AF.Recruiter:Templates()
+    for i, row in ipairs(templatesWindow.rows) do
+        local t = templates[i]
+        row.name:SetText(t and t.n or "")
+        row.text:SetText(t and t.t or "")
+        row.text:SetCursorPosition(0)
+    end
+    templatesWindow.save:SetEnabled(AF.Config:CanEdit())
+    templatesWindow:Show()
+end
+
+local function Cycle(list, current)
+    for i, v in ipairs(list) do
+        if v == current then return list[i % #list + 1] end
+    end
+    return list[1]
+end
+
+local RECRUIT_CLASSES = { false, "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST", "SHAMAN", "MAGE", "WARLOCK", "DRUID" }
+
+function RecruitTab:Build(panel)
+    self.panel = panel
+    local s = AF.Recruiter:Settings()
+
+    -- Filters.
+    local levels = Theme.Text(panel, 12)
+    levels:SetPoint("TOPLEFT", 16, -16)
+    levels:SetText("Levels")
+    self.minBox = Theme.EditBox(panel, 34)
+    self.minBox:SetPoint("LEFT", levels, "RIGHT", 8, 0)
+    self.minBox:SetNumeric(true)
+    self.minBox:SetMaxLetters(2)
+    local dash = Theme.Text(panel, 12, C.dim)
+    dash:SetPoint("LEFT", self.minBox, "RIGHT", 4, 0)
+    dash:SetText("-")
+    self.maxBox = Theme.EditBox(panel, 34)
+    self.maxBox:SetPoint("LEFT", dash, "RIGHT", 4, 0)
+    self.maxBox:SetNumeric(true)
+    self.maxBox:SetMaxLetters(2)
+    self.classButton = Theme.Button(panel, "All classes", 92, 22)
+    self.classButton:SetPoint("LEFT", self.maxBox, "RIGHT", 8, 0)
+    self.zoneBox = Theme.EditBox(panel, 104)
+    self.zoneBox:SetPoint("LEFT", self.classButton, "RIGHT", 8, 0)
+    self.zoneHint = Theme.Text(self.zoneBox, 11, C.dim)
+    self.zoneHint:SetPoint("LEFT", 8, 0)
+    self.zoneHint:SetText("Zone (optional)")
+    self.guildless = Theme.Check(panel, "Guildless", s.filters.guildless, function(on) self:ApplyFilters(on) end)
+    self.guildless:SetPoint("LEFT", self.zoneBox, "RIGHT", 10, 0)
+
+    local function Apply() self:ApplyFilters() end
+    for _, box in ipairs({ self.minBox, self.maxBox, self.zoneBox }) do
+        box:SetScript("OnEnterPressed", function(b) b:ClearFocus() Apply() end)
+        box:SetScript("OnEditFocusLost", Apply)
+    end
+    self.zoneBox:SetScript("OnTextChanged", function(b) self.zoneHint:SetShown(b:GetText() == "") end)
+    self.classButton:SetScript("OnClick", function()
+        local f = AF.Recruiter:Settings().filters
+        f.class = Cycle(RECRUIT_CLASSES, f.class or false) or nil
+        self:ApplyFilters()
+    end)
+
+    -- How to contact, and the two steps.
+    self.templateButton = Theme.Button(panel, "Template", 150, 22)
+    self.templateButton:SetPoint("TOPLEFT", 16, -46)
+    self.templateButton:SetScript("OnClick", function()
+        local r = AF.Recruiter:Settings()
+        local count = #AF.Recruiter:Templates()
+        r.template = count > 0 and (r.template % count) + 1 or 1
+        self:Refresh()
+    end)
+    self.templateButton:SetScript("OnEnter", function(b)
+        local template = AF.Recruiter:Templates()[AF.Recruiter:Settings().template]
+        GameTooltip:SetOwner(b, "ANCHOR_RIGHT")
+        GameTooltip:AddLine(template and template.n or "No template yet")
+        if template then GameTooltip:AddLine(template.t, 0.85, 0.85, 0.87, true) end
+        GameTooltip:AddLine("Click for the next template.", 0.55, 0.55, 0.57)
+        GameTooltip:Show()
+    end)
+    self.templateButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    self.modeButton = Theme.Button(panel, "Whisper", 120, 22)
+    self.modeButton:SetPoint("LEFT", self.templateButton, "RIGHT", 6, 0)
+    self.modeButton:SetScript("OnClick", function()
+        local r = AF.Recruiter:Settings()
+        r.mode = Cycle(AF.Recruiter.MODES, r.mode)
+        self:Refresh()
+    end)
+    self.editTemplates = Theme.Button(panel, "Templates", 80, 22)
+    self.editTemplates:SetPoint("LEFT", self.modeButton, "RIGHT", 6, 0)
+    self.editTemplates:SetScript("OnClick", function() UI:ShowTemplates() end)
+    self.searchButton = Theme.Button(panel, "Search", 84, 22)
+    self.searchButton:SetPoint("TOPRIGHT", -16, -46)
+    self.searchButton:SetScript("OnClick", function() AF.Recruiter:Search() end)
+
+    self.nextButton = Theme.Button(panel, "Next", 448, 26)
+    self.nextButton:SetPoint("TOPLEFT", 16, -76)
+    self.nextButton:SetScript("OnClick", function() AF.Recruiter:Next() end)
+
+    self.list = Theme.List(panel, {
+        left = 14, top = -110, rows = 10, rowHeight = 22,
+        emptyText = "Set the filters and click Search. Each search covers 5 levels.",
+        columns = {
+            { key = "name", label = "Player", width = 150 },
+            { key = "level", label = "Lvl", width = 34, justify = "RIGHT" },
+            { key = "class", label = "Class", width = 86 },
+            { key = "zone", label = "Zone", width = 108 },
+            { key = "status", label = "", width = 66 },
+        },
+        render = function(row, p)
+            row.cells.name:SetText(AF:ShortName(p.name))
+            row.cells.name:SetTextColor(ClassColor(p.file))
+            row.cells.level:SetText(p.level or "")
+            row.cells.class:SetText(p.class or "")
+            row.cells.zone:SetText(p.zone or "")
+            local key = AF.Recruiter:Status(p.name)
+            local status = RECRUIT_STATUS[key]
+            if not p.done and key == "new" and AF.Recruiter.Needed(p.file) then
+                row.cells.status:SetText("needed")
+                row.cells.status:SetTextColor(1, 0.6, 0.2)
+            else
+                row.cells.status:SetText(p.done or status[1])
+                row.cells.status:SetTextColor(unpack(status[2]))
+            end
+        end,
+        onRowEnter = function(row, p)
+            GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
+            GameTooltip:AddLine(AF:ShortName(p.name), ClassColor(p.file))
+            GameTooltip:AddLine(("Level %s %s %s"):format(p.level or "?", p.race or "", p.class or ""), 0.85, 0.85, 0.87)
+            if p.zone then GameTooltip:AddLine(p.zone, 0.85, 0.85, 0.87) end
+            local text = AF.Recruiter:Message(p)
+            if text and AF.Recruiter:Settings().mode ~= "invite" then
+                GameTooltip:AddLine(" ")
+                GameTooltip:AddLine(text, 1, 0.82, 0.33, true)
+            end
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Click: contact this player  ·  Shift-click: blacklist", 0.55, 0.55, 0.57)
+            GameTooltip:Show()
+        end,
+        onRowClick = function(p)
+            if IsShiftKeyDown() then
+                AF.Recruiter:Block(p.name, AF.Recruiter:Status(p.name) ~= "blocked")
+            else
+                AF.Recruiter:Contact(p.name)
+            end
+        end,
+    })
+
+    local repliesLabel = Theme.Label(panel, "Replies")
+    repliesLabel:SetPoint("TOPLEFT", 16, -364)
+    self.replies = Theme.List(panel, {
+        left = 14, top = -382, rows = 5, rowHeight = 22,
+        emptyText = "Whispers back from players you contacted show up here.",
+        columns = {
+            { key = "name", label = "Player", width = 120 },
+            { key = "text", label = "Message", width = 214 },
+            { key = "invite", label = "", width = 56, widget = function(row)
+                local b = Theme.Button(row, "Invite", 50, 18)
+                b:SetScript("OnClick", function() if row.data then AF.Recruiter:Invite(row.data.n) end end)
+                return b
+            end },
+            { key = "block", label = "", width = 56, widget = function(row)
+                local b = Theme.Button(row, "Block", 50, 18)
+                b:SetScript("OnClick", function() if row.data then AF.Recruiter:Block(row.data.n, true) end end)
+                return b
+            end },
+        },
+        render = function(row, r)
+            row.cells.name:SetText(AF:ShortName(r.n))
+            row.cells.text:SetText(r.text)
+            row.cells.text:SetTextColor(unpack(C.dim))
+        end,
+        onRowEnter = function(row, r)
+            GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
+            GameTooltip:AddLine(AF:ShortName(r.n))
+            GameTooltip:AddLine(r.text, 1, 1, 1, true)
+            GameTooltip:AddLine(date("%H:%M", r.t), 0.55, 0.55, 0.57)
+            GameTooltip:AddLine("Click to whisper back", 0.55, 0.55, 0.57)
+            GameTooltip:Show()
+        end,
+        onRowClick = function(r)
+            if ChatFrame_SendTell then ChatFrame_SendTell(r.n) end
+        end,
+    })
+
+    self.info = Theme.Text(panel, 11, C.dim)
+    self.info:SetPoint("BOTTOMLEFT", 16, 14)
+    self.info:SetWidth(448)
+end
+
+-- Reads the filter boxes (guildless: the checkbox's new state, when it changed).
+function RecruitTab:ApplyFilters(guildless)
+    local f = AF.Recruiter:Settings().filters
+    AF.Recruiter:SetFilters(self.minBox:GetText(), self.maxBox:GetText(), f.class, self.zoneBox:GetText(), guildless)
+end
+
+function RecruitTab:Refresh()
+    if not self.panel then return end
+    local r = AF.Recruiter:Settings()
+    local f = r.filters
+    if not self.minBox:HasFocus() then self.minBox:SetText(f.min) end
+    if not self.maxBox:HasFocus() then self.maxBox:SetText(f.max) end
+    if not self.zoneBox:HasFocus() then self.zoneBox:SetText(f.zone or "") end
+    self.classButton.label:SetText(f.class and AF.Recruiter.ClassName(f.class) or "All classes")
+    self.guildless.checked = f.guildless and true or false
+    self.guildless.mark:SetShown(self.guildless.checked)
+
+    local templates = AF.Recruiter:Templates()
+    local template = templates[r.template] or templates[1]
+    self.templateButton.label:SetText(template and template.n or "No template yet")
+    self.modeButton.label:SetText(AF.Recruiter.MODE_TEXT[r.mode])
+    local range = AF.Recruiter:NextRange()
+    self.searchButton.label:SetText(AF.Recruiter:Searching() and "Searching..." or ("Search %d-%d"):format(range[1], range[2]))
+
+    local nextOne = AF.Recruiter:NextCandidate()
+    local verb = r.mode == "invite" and "Invite" or (r.mode == "both" and "Whisper + invite" or "Whisper")
+    self.nextButton.label:SetText(nextOne and ("Next: %s %s (level %s %s)"):format(verb, AF:ShortName(nextOne.name),
+        nextOne.level or "?", nextOne.class or "") or "Next: nobody new, search again")
+    self.nextButton:SetEnabled(nextOne ~= nil)
+
+    self.list:SetData(AF.Recruiter:Results())
+    self.replies:SetData(AF.Recruiter:Replies())
+    local new, contacted = 0, 0
+    for _, p in ipairs(AF.Recruiter:Results()) do
+        local status = AF.Recruiter:Status(p.name)
+        if status == "new" then new = new + 1 elseif status == "contacted" then contacted = contacted + 1 end
+    end
+    self.info:SetText(AF.Recruiter:CanUse()
+        and ("%d found  ·  %d new  ·  %d contacted  ·  key bind: a macro with /gms recruit next"):format(#AF.Recruiter:Results(), new, contacted)
+        or "Your rank can't invite to the guild, so you can't recruit.")
+end
+
+AF:On("RECRUIT_UPDATED", function()
+    if Visible(RecruitTab) then RecruitTab:Refresh() end
+end)
+
 StaticPopupDialogs.GMS_ATTUNE_REMOVE = {
     text = "Remove the %s attunement for the whole guild?",
     button1 = REMOVE,
@@ -2346,8 +3321,10 @@ function UI:ShowPopup()
     if popup.shownEntry ~= entry then      -- a new item: a fresh note
         popup.shownEntry = entry
         popup.note:SetText("")
-        if AF.Wishlist:MyRank(entry.link) and SOUNDKIT and SOUNDKIT.RAID_WARNING then
-            pcall(PlaySound, SOUNDKIT.RAID_WARNING, "Master")    -- one of your wishlist items
+        local rank = AF.Wishlist:MyRank(entry.link)
+        if rank then
+            if SOUNDKIT and SOUNDKIT.RAID_WARNING then pcall(PlaySound, SOUNDKIT.RAID_WARNING, "Master") end
+            UI:WishDrop(entry.link, rank)    -- one of your wishlist items: a card too
         end
     end
 
@@ -2498,6 +3475,7 @@ local function RefreshAll()
     if Visible(BankTab) then BankTab:Refresh() end
     if Visible(Log) then Log:Refresh() end
     if Visible(LootTab) then LootTab:Refresh() end
+    if Visible(AnalyticsTab) then AnalyticsTab:Refresh() end
     RefreshLoot()
 end
 
@@ -2513,6 +3491,7 @@ end)
 AF:On("CONFIG_UPDATED", function()
     RefreshAll()
     RefreshNav()
+    if Visible(RecruitTab) then RecruitTab:Refresh() end
     if Visible(PrioTab) then PrioTab:Refresh() end
     if Visible(Options) then Options:Refresh() end
     if Visible(BankTab) then BankTab:Refresh() end
@@ -2929,7 +3908,7 @@ local function RefreshSetup()
 end
 
 local function CreateSetup()
-    setup = Theme.Window("GMSSetup", "Guild setup", 460, 640, 40)
+    setup = Theme.Window("GMSSetup", "Guild setup", 460, 672, 40)
     local y = -36
     local function Heading(text)
         local h = Theme.Label(setup, text)
@@ -3174,6 +4153,17 @@ function UI:ShowNudge()
     if not nudge then nudge = CreateCard("GMSNudge", "Guild Management System", NUDGE_SHOWN, function() UI:ShowMe() end) end
     nudge:Present(table.concat(lines, "\n"))
     return true
+end
+
+-------------------------------------------------------------------------------
+--  Wishlist card: an item on your wishlist dropped
+-------------------------------------------------------------------------------
+local WISH_SHOWN = 20
+local wishCard
+
+function UI:WishDrop(link, rank)
+    if not wishCard then wishCard = CreateCard("GMSWishDrop", "From your wishlist", WISH_SHOWN) end
+    wishCard:Present(("%s dropped: #%d on your wishlist. Answer the loot popup."):format(link, rank))
 end
 
 -------------------------------------------------------------------------------

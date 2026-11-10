@@ -118,7 +118,8 @@ becomes the holder and tells the raid.
 - **Done:** a completed trade is detected and shows as "delivered" in the officers' loot window.
 
 ## More for the guild
-- **Wishlists** (`/gms wish`): rank up to 10 items you want. Only officers see them: at loot
+- **Wishlists** (`/gms wish`): rank up to 10 items you want (shift-click, paste a Wowhead link or
+  type the item ID). A card tells you when one of them drops. Only officers see them: at loot
   time, in item tooltips and in a guild overview.
 - **Crafters** (`/gms crafters`): search who in the guild can craft something, and see
   everyone's professions. Item tooltips show "Crafted by".
@@ -126,6 +127,16 @@ becomes the holder and tells the raid.
 - **Layers** (`/gms layers`): which layer online guild members are on, by zone, so you know who to
   whisper for a group invite. Your layer is read from NPCs you hover or target. It only shows;
   it never invites or moves anyone.
+- **Analytics** (`/gms analytics`): the guild in numbers.
+  - **Roster:** members, online now, at the level cap and active lately; classes (all, max level
+    or online), levels and ranks, with the names when you hover a bar. Officers set which classes
+    the guild needs (Needs button); it shows on the class bars.
+  - **Members:** every member in a list you can search and sort, alts under their main, and an
+    export to CSV for a spreadsheet.
+  - **Guild:** professions, attunements and effort from what GMS collects, and for officers this
+    week's kills, awards, runs and deposits.
+  - **History:** joins, leaves, kicks and promotions from the game's guild log, kept longer than
+    the game keeps them (if the client allows it; `/gms debug` says).
 - **Check group** (`/gms check`): addon versions, repair, flasks/elixirs, missing class buffs and
   range for everyone in the group, with a tanks / healers / DPS count.
 - **Raid invites** (`/gms invite`): invite everyone online at chosen ranks and minimum effort,
@@ -192,7 +203,7 @@ that off per addon in EllesmereUI's options.
 
 | Command | What it does |
 |---|---|
-| `/gms` | Main window: Effort, Me, Rules, Bank, Wishlist, Crafters, Attunements and Layers tabs (officers also get Loot history, Log and Options) |
+| `/gms` | Main window: Effort, Me, Rules, Bank, Wishlist, Crafters, Attunements, Layers and Analytics tabs (officers also get Loot history, Priorities, Log and Options) |
 | `/gms me` | Your own effort: the split per category, what's left this week, the last 4 weeks |
 | `/gms rules` | How effort is scored, with the guild's current numbers |
 | `/gms main` | Make this character your main |
@@ -206,6 +217,7 @@ that off per addon in EllesmereUI's options.
 | `/gms crafters [item]` | Who in the guild can craft something, or everyone's professions |
 | `/gms attune` | Who in the guild is attuned to which raid (officers add or remove attunements) |
 | `/gms layers` | Which layer online guild members are on, and who to whisper for an invite |
+| `/gms analytics` (or `/gms stats`) | The guild in numbers: classes, levels, ranks, professions, attunements, effort |
 | `/gms versions` (or `/gms check`) | Who in your group has the addon and which version, with durability, flasks / elixirs and range |
 | `/gms invite` | Raid invites by rank and minimum effort, and invites by whisper keyword |
 | `/gms minimap` | Show or hide the minimap button |

@@ -629,6 +629,23 @@ function Ledger:WeekWins(week)
     return out
 end
 
+-- A week in numbers (the Analytics tab): guild kills, awards (and items given to
+-- the guild), dungeon runs, players with anything recorded, and the gold value of
+-- their bank deposits.
+function Ledger:WeekStats(week)
+    local stats = { kills = 0, awards = 0, forGuild = 0, runs = #RunGroups(week), players = 0, gold = 0 }
+    for _, kill in ipairs(kills[week] or {}) do
+        if Live(kill) then stats.kills = stats.kills + 1 end
+    end
+    for _, e in ipairs(self:WeekWins(week)) do
+        if self.FOR_GUILD[e.r] then stats.forGuild = stats.forGuild + 1 else stats.awards = stats.awards + 1 end
+    end
+    local players = self:WeekPlayers(week)
+    stats.players = #players
+    for _, main in ipairs(players) do stats.gold = stats.gold + (self:DepositGold(week, main) or 0) end
+    return stats
+end
+
 -- Everything the archive keeps of a week (see Archive.lua), worked out from the
 -- events: points per category per player, awards, wanted items deposited, and
 -- for goals that started during the week, the deposits from their start.

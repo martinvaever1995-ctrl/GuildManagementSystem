@@ -1,4 +1,4 @@
-# Guild Management System (GMS) — Spec (v3.3.0)
+# Guild Management System (GMS) — Spec (v3.4.0)
 
 ## Goal
 A WoW addon that helps officers distribute raid loot by showing each player's **effort**:
@@ -453,7 +453,73 @@ keep a copy outside the game. Nothing is stored in guild notes.
       `wn = { [main] = "itemID,itemID" }`, this week's wins without guild-bank and disenchant
       awards. Raiders see them in the Effort tooltip, the Me tab and the loot window (a raid
       leader who isn't an officer). Read only while the snapshot is from this week.
-    - Guild setup is taller (640) for the four new switches.
+    - Guild setup is taller (672 since step 22) for the new switches.
+
+21. Guild analytics (3.4.0). **Done, awaiting in-game test.**
+    - **Analytics tab** (feature `analytics`, on; everyone sees it, "This week" is officers
+      only), `/gms analytics` or `/gms stats`. Two views:
+      - **Roster** (the game's guild roster, so every member, with or without GMS): members,
+        online now, at the level cap, played in the last 7 / 30 days (only when the client gives
+        last-online times); class bars in class colors for all / max level / online; levels in
+        steps of 10 with the cap on its own; members per rank. Hovering a bar lists the names.
+      - **Guild** (what GMS collects): professions from the crafters directory (members, and how
+        many are at the highest skill seen), attunements (attuned of those known), effort per
+        player in quarters of the maximum with the average, and for officers this week from the
+        ledger (`Ledger:WeekStats`: guild kills, awards, items to the guild, dungeon runs, bank
+        deposits, players with points).
+    - The roster now keeps level, rank name, zone and days since last online per member.
+    - The level cap is the game's (`GetMaxLevelForPlayerExpansion`), or the highest level in the
+      guild if that's higher.
+    - No new messages and no saved data.
+    - `Theme.Bar` takes a fixed color (`bar:SetColor`) for class colors.
+
+22. Recruiter (held back: not in 3.4.0). **Done, awaiting in-game test.** Its guild setup
+    switch is commented out in `Config.FEATURES`, so `Recruiter:CanUse()` is always false and
+    the page, `/gms recruit` and its messages stay off until it is released. (Recruiting came back after
+    3.0.0 removed the hidden-channel Recruit tab; this is a new design.)
+    - **Feature `recruiter`, off by default.** The page shows for characters whose rank may
+      invite (`CanGuildInvite`); `/gms recruit`.
+    - **One click per step (decided):** the game only allows `/who` and guild invites from a
+      click or key press, and one whisper per click keeps it polite. At least 3 s between two
+      players. `/gms recruit search` / `next` work from a macro key bind.
+    - **Search:** level range, class, zone, guildless only. Each search is one `/who` for 5
+      levels (it returns at most 50); the next click searches the next 5. Results skip guild
+      members, players in a guild (when guildless only), the blacklist and anyone contacted
+      in the last 14 days. The game's Who window is kept shut while GMS reads the results.
+    - **Contact:** whisper, whisper + invite, or invite only. The whisper comes from a shared
+      template (`config.recruit = { { n, t } }`, up to 5, officers edit; `{player}`,
+      `{guild}`, `{class}`, `{level}`, `{zone}`). "Next" contacts the next new player; a
+      row click contacts that one, shift-click blacklists.
+    - **Replies:** whispers back from contacted players (this session) with Invite and Block.
+    - **Shared lists** (`AF.db.recruit`, per guild): contacted (14 days) and blacklist.
+      `REC { k = "c" | "b", n, t, on }` to the guild as they change; a recruiter logging in
+      sends `RECQ`, and other recruiters whisper their lists (`REC { k = "list", c, b }`,
+      bulk lane). Lists merge by the newest time; taking someone off the blacklist only
+      reaches recruiters online at the time.
+    - Newer clients keep `recruit` when an older officer's config leaves it out.
+    - `/gms debug` shows whether this client has the /who and guild invite functions and
+      whether your rank may invite.
+
+23. More from A.X.I.O.M.'s ideas (3.4.0). **Done, awaiting in-game test.** (Ideas
+    only; its code is "All Rights Reserved".)
+    - **Members view** in Analytics: every member in a sortable, searchable list (name, level,
+      class, rank, last online, effort), alts under their main, "on an alt" when the main is
+      offline but an alt is online, and an Export CSV button.
+    - **Member history** (`History.lua`): the game's guild event log (joins, leaves, kicks,
+      invites, promotions, demotions) saved per guild by every client that reads it, up to 500
+      events, so it outlasts the game's short log. The log gives "N hours/days ago", so an event
+      matches a saved one with the same kind, players and rank within 36 hours. A History view
+      in Analytics and "Last 30 days: N joined, M left" under Members; both only when the
+      client has the API (`/gms debug` says).
+    - **Class needs:** `config.needs = { classFile = count }` and `needsNote`, set by
+      officers with Analytics' Needs button. Analytics shows "need N" on the class bars and a
+      "Looking for" line; the recruiter (when released) marks those players "needed" and
+      contacts them first.
+      Newer clients keep both when an older officer's config leaves them out.
+    - **Wowhead links:** item boxes and `/gms wish` take a link, `item:12345`, a Wowhead address
+      (`.../item=12345/...`) or an item ID (`AF:ItemID`).
+    - **Wishlist card:** when an item on your wishlist drops, a card says so (besides the sound
+      and the popup).
 
 ## Later
 Planned:

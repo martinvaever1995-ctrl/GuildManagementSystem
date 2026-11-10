@@ -22,6 +22,9 @@ local DEFAULTS = {
     wanted = {},            -- guild bank wanted list: itemID -> gold value per unit
     goals = {},             -- goals for wanted items: itemID -> { n = target count, since = server time }
     prios = {},             -- loot priorities: itemID -> { o = "Warrior tank > Rogue", t = note }
+    recruit = {},           -- recruiter whisper templates: { { n = name, t = text with {player} etc. }, ... }
+    needs = {},             -- classes the guild is looking for: classFile -> how many
+    needsNote = "",         -- and a line about it ("2 healers for Molten Core")
     guildKillShare = 75,    -- % of the raid that must be guild members for a guild kill
     honorTarget = 5000,     -- weekly honor that gives the full honor score
     responseTimeout = 60,   -- seconds the loot popup stays up
@@ -48,6 +51,8 @@ Config.FEATURES = {
     { key = "awardReasons", label = "Award reasons (upgrade, BiS, off spec, alt)", default = true },
     { key = "tokens", label = "Tier tokens: classes and the sets players wear", default = true },
     { key = "winsPublic", label = "Show items won this week to everyone", default = false },
+    { key = "analytics", label = "Guild analytics: classes, levels, professions and more", default = true },
+    -- Held back for now (not released): { key = "recruiter", label = "Recruiter: /who search, whisper and invite guildless players", default = false },
 }
 local FEATURE_DEFAULT = {}
 for _, f in ipairs(Config.FEATURES) do FEATURE_DEFAULT[f.key] = f.default end
@@ -118,6 +123,19 @@ local function Normalize(t)
     for key, on in pairs(t.features) do
         if FEATURE_DEFAULT[key] == nil or type(on) ~= "boolean" then t.features[key] = nil end
     end
+    local templates = {}
+    for _, tpl in ipairs(t.recruit) do
+        if type(tpl) == "table" and #templates < 5 then
+            local name = Config.CleanText(tpl.n)
+            local text = type(tpl.t) == "string" and tpl.t:gsub("|", ""):gsub("^%s+", ""):gsub("%s+$", ""):sub(1, 250) or ""
+            if text ~= "" then table.insert(templates, { n = name and name:sub(1, 30) or ("Template " .. (#templates + 1)), t = text }) end
+        end
+    end
+    t.recruit = templates
+    for file, n in pairs(t.needs) do
+        if type(file) ~= "string" or type(n) ~= "number" or n < 1 then t.needs[file] = nil else t.needs[file] = math.min(99, math.floor(n)) end
+    end
+    t.needsNote = Config.CleanText(t.needsNote) or ""
     for id, p in pairs(t.prios) do
         local ok = type(id) == "number" and type(p) == "table"
         if ok then
@@ -230,6 +248,8 @@ AF.Comm:On("CFG", function(sender, incoming)
     -- An officer on an older version drops what it doesn't know (priorities, newer
     -- switches) when it saves. Keep ours for anything it didn't send.
     if incoming.prios == nil then incoming.prios = cfg.prios end
+    if incoming.recruit == nil then incoming.recruit = cfg.recruit end
+    if incoming.needs == nil then incoming.needs, incoming.needsNote = cfg.needs, cfg.needsNote end
     if type(incoming.features) == "table" then
         for key, on in pairs(cfg.features) do
             if incoming.features[key] == nil then incoming.features[key] = on end
@@ -337,6 +357,24 @@ function Config:SetWanted(itemID, value, goal)
         local existing = cfg.goals[itemID]
         cfg.goals[itemID] = { n = math.floor(goal), since = existing and existing.since or GetServerTime() }
     end
+    self:Publish()
+    return true
+end
+
+-- What the guild is looking for: { classFile = count } and a note.
+function Config:SetNeeds(needs, note)
+    if not self:CanEdit() then return nil, "Only officers can change what the guild is looking for." end
+    cfg.needs, cfg.needsNote = needs, note
+    Normalize(cfg)
+    self:Publish()
+    return true
+end
+
+-- The recruiter's whisper templates: { { n = name, t = text }, ... } (empty texts dropped).
+function Config:SetTemplates(list)
+    if not self:CanEdit() then return nil, "Only officers can change the whisper templates." end
+    cfg.recruit = list
+    Normalize(cfg)
     self:Publish()
     return true
 end

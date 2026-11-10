@@ -29,12 +29,8 @@ local function Store()
     return AF.db.wishes
 end
 
-function Wishlist.ItemID(linkOrID)
-    if type(linkOrID) == "number" then return linkOrID end
-    if type(linkOrID) ~= "string" then return nil end
-    local id = linkOrID:find("item:", 1, true) and C_Item.GetItemInfoInstant(linkOrID)
-    return id or tonumber(linkOrID)
-end
+-- A link, a Wowhead address or an item ID.
+function Wishlist.ItemID(linkOrID) return AF:ItemID(linkOrID) end
 
 local function Changed()
     index = nil

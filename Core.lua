@@ -5,8 +5,8 @@
 local ADDON_NAME, AF = ...
 _G.GuildManagementSystem = AF
 
-AF.VERSION = 30300          -- major * 10000 + minor * 100 + patch; bump with ## Version
-AF.VERSION_STRING = "3.3.0"
+AF.VERSION = 30400          -- major * 10000 + minor * 100 + patch; bump with ## Version
+AF.VERSION_STRING = "3.4.0"
 AF.DISCORD = "https://discord.gg/U4UCtfRgmE"
 AF.PREFIX = "GuildMgmtSys"  -- addon message prefix (max 16 chars)
 AF.PREFIX_BULK = "GuildMgmtSysBk"   -- the slow lane for large data (Comm.lua)
@@ -135,6 +135,15 @@ function AF:UnitFullName(unit)
     if not Readable(first) or self:IsSecret(second) then return nil end
     if Readable(second) and second ~= Realm() then return first .. " " .. second end
     return first
+end
+
+-- An item ID from a link, "item:12345", a Wowhead address (".../item=12345/...")
+-- or a plain number; nil if there's none.
+function AF:ItemID(text)
+    if type(text) == "number" then return text end
+    if type(text) ~= "string" or self:IsSecret(text) then return nil end
+    text = text:match("^%s*(.-)%s*$")
+    return tonumber(text:match("item[:=](%d+)") or text:match("^%d+$"))
 end
 
 -- Keys are already display names ("First Surname").
@@ -411,6 +420,11 @@ function AF:DebugLines()
     local craftApi, craftWindow, myRecipes, crafters = self.Professions.ApiReport()
     Add("Professions: recipe API %s | enchanting window API: %s | your recipes: %d | characters known: %d",
         craftApi, craftWindow and "yes" or "no", myRecipes, crafters)
+    local logApi, saved = self.History.ApiReport()
+    Add("Guild event log: %s | events saved: %d", logApi and "yes" or "NO (no member history)", saved)
+    local whoApi, inviteApi, canInvite = self.Recruiter.ApiReport()
+    Add("Recruiter (not released yet): /who API: %s | guild invite API: %s | your rank may invite: %s",
+        whoApi and "yes" or "NO", inviteApi and "yes" or "NO", canInvite and "yes" or "no")
     local bankApi, interaction, pendingDeposits = self.Bank.ApiReport()
     Add("Guild bank API: %s | bank window event: %s | your unconfirmed deposit reports: %d",
         bankApi, interaction and "interaction manager" or "GUILDBANKFRAME", pendingDeposits)
@@ -454,6 +468,7 @@ local HELP = {
     "/gms minimap - show or hide the minimap button (left-click opens, right-click for a menu, drag to move)",
     "/gms attune - who in the guild is attuned to which raid (officers add or remove attunements there)",
     "/gms layers - which layer guild members are on, and who to whisper for an invite",
+    "/gms analytics (or /gms stats) - the guild in numbers: classes, levels, ranks, professions, attunements, effort",
     "/gms crafters [item] - who in the guild can craft something; without a search, everyone's professions",
     "/gms wish [shift-click item] - your wishlist (up to 10 items, ranked; only officers see it), or add an item to it",
     "/gms bench add|remove <name>, /gms bench list|clear - players on your bench get credit for guild kills you record (officers)",
@@ -578,6 +593,8 @@ end
 commands.rules = function() AF.UI:ShowRules() end
 commands.attune = function() AF.UI:ShowAttunements() end
 commands.layers = function() AF.UI:ShowLayers() end
+commands.analytics = function() AF.UI:ShowAnalytics() end
+commands.stats = commands.analytics
 commands.layer = commands.layers
 commands.invite = function() AF.UI:ShowInvites() end
 commands.setup = function() AF.UI:ShowSetup() end

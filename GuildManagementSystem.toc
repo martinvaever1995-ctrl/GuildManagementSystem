@@ -1,7 +1,7 @@
 ## Interface: 16001
 ## Title: Guild Management System
 ## Notes: Guild effort, loot council, wishlists, crafters, attunements and layers for WoW: Forever.
-## Version: 3.3.0
+## Version: 3.4.0
 ## IconTexture: Interface\AddOns\GuildManagementSystem\Media\Logo
 ## X-Wago-ID: j6jAa0NR
 ## X-Curse-Project-ID: 1735032
@@ -25,6 +25,8 @@ Wishlist.lua
 Professions.lua
 Attunements.lua
 Layers.lua
+Recruiter.lua
+History.lua
 Invites.lua
 GuildLoot.lua
 Loot.lua

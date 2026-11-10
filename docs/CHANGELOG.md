@@ -1,5 +1,26 @@
 # Guild Management System
 
+## v3.4.0
+
+### Analytics
+- **New Analytics tab** (`/gms analytics` or `/gms stats`): the guild in numbers.
+  - **Roster:** members, online now and at the level cap; classes (all, max level or online),
+    levels and ranks. Hover a bar to see who.
+  - **Members:** everyone in the guild, searchable and sortable, alts under their main, "on an
+    alt" when someone plays an alt, and Export CSV for a spreadsheet.
+  - **Guild:** professions and attunements from what GMS collects, effort across the guild, and
+    for officers this week's guild kills, awards, dungeon runs and bank deposits.
+  - **History:** joins, leaves, kicks and promotions from the game's guild log, kept longer than
+    the game keeps them (if the client allows it; `/gms debug` says).
+- **Class needs:** officers set which classes the guild is looking for (Analytics → Needs). It
+  shows on the class bars and as a "Looking for" line.
+- Officers can switch Analytics off in guild setup.
+
+### Smaller things
+- **Wowhead links:** paste a Wowhead link or type an item ID in the wishlist, bank and priority
+  boxes, and in `/gms wish`.
+- **Wishlist card:** a card tells you when an item on your wishlist drops.
+
 ## v3.3.0
 
 ### Long-term history

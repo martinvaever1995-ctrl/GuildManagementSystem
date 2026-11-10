@@ -30,7 +30,7 @@ function Standings.WeekMax()
     return math.max(1, total)
 end
 
-local members = {}              -- full name -> { name, classFile, rankIndex, online }
+local members = {}              -- full name -> { name, classFile, rankIndex, rankName, level, zone, online, offlineDays }
 
 -------------------------------------------------------------------------------
 --  Weeks
@@ -172,11 +172,26 @@ end
 -------------------------------------------------------------------------------
 function Standings:Refresh()
     wipe(members)
+    local function Plain(v) return not AF:IsSecret(v) and v or nil end
     for i = 1, GetNumGuildMembers() do
-        local name, _, rankIndex, _, _, _, _, _, online, _, classFile = GetGuildRosterInfo(i)
+        local name, rankName, rankIndex, level, _, zone, _, _, online, _, classFile = GetGuildRosterInfo(i)
         name = AF:FullName(name)
         if name then
-            members[name] = { name = name, classFile = classFile, rankIndex = rankIndex, online = online }
+            -- Days since they were last online (0 while online), if the client says.
+            local offlineDays
+            if online then
+                offlineDays = 0
+            elseif GetGuildRosterLastOnline then
+                local y, mo, d, h = GetGuildRosterLastOnline(i)
+                y, mo, d, h = Plain(y), Plain(mo), Plain(d), Plain(h)
+                if type(y) == "number" or type(mo) == "number" or type(d) == "number" or type(h) == "number" then
+                    offlineDays = (y or 0) * 365 + (mo or 0) * 30 + (d or 0) + (h or 0) / 24
+                end
+            end
+            members[name] = { name = name, classFile = classFile, rankIndex = rankIndex, online = online,
+                rankName = type(Plain(rankName)) == "string" and rankName or nil,
+                level = type(Plain(level)) == "number" and level or nil,
+                zone = type(Plain(zone)) == "string" and zone or nil, offlineDays = offlineDays }
         end
     end
     AF:Fire("STANDINGS_UPDATED")

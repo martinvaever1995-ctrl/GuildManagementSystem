@@ -209,3 +209,57 @@ Setup: an officer alone with `/gms test`, then a raid with the loot authority an
 8. **Older officers:** an officer on 3.2.3 saves the effort rules: the priorities and new
    switches are still there afterwards on updated clients.
 9. `/gms export web` and `/gms archive test`: still valid and OK, with `"reason"` on awards.
+
+## 21. Guild analytics
+Setup: alone in the guild, then as an officer.
+1. `/gms analytics` (or the Analytics entry in the sidebar): the Roster view.
+   - "Members": the total matches the guild window's member count; online now matches too.
+   - A second line with "played in the last 7 / 30 days" (if it's missing, the client doesn't
+     give last-online times; tell me).
+2. Classes: one bar per class in its class color, biggest first, with count and %. The buttons
+   All / Max level / Online change the counts. Hover a bar: the names.
+3. Levels: the level cap on its own bar, then 50-59, 40-49 ... Hover: the names.
+4. Ranks: one bar per rank with its name.
+5. Guild view: Professions (with "N at 300" or the highest skill seen), Attunements ("12 / 30"),
+   Effort in bands with the average. As an officer: "This week (officers)" with kills, awards,
+   runs, deposits and players. As a raider: no "This week".
+6. Both looks (Modern, Classic) and `/gms scale 80` / `130`: nothing overlaps.
+7. Guild setup: switch "Guild analytics" off; the tab disappears from the sidebar.
+
+## 22. Recruiter
+Setup: an officer, then a second recruiter (a rank that may invite) online at the same time.
+1. `/gms debug`: the Recruiter line says "/who API: yes", "guild invite API: yes", "your rank
+   may invite: yes". If anything says NO, stop and send me the line.
+2. Guild setup: switch "Recruiter" on. The Recruiter entry appears in the sidebar (only for
+   ranks that may invite).
+3. Templates: click Templates, write one ("Hi {player}, Advent is looking for a {class} ...").
+   Save. A second officer sees the same template.
+4. Levels 10-14, Guildless ticked, Search: chat says "levels 10-14, N new players found"; the list
+   fills; the game's Who window does not open. Search again: the button said "Search 15-19".
+5. Hover a player: the whisper as it will be sent, with their name and class filled in.
+6. Mode "Whisper", Next: the whisper goes out, the row says "whispered". Clicking Next again
+   within 3 seconds says to wait.
+7. Mode "Whisper + invite" and "Invite only": the guild invite goes out too.
+8. The other recruiter's list shows that player as "contacted" (search the same levels).
+9. The player whispers back: it shows under Replies. Invite and Block work; clicking the row
+   opens a whisper to them.
+10. Shift-click a player: "blacklist"; the other recruiter sees it too.
+11. A macro `/gms recruit next` on a key: pressing it contacts the next player.
+12. Switch the feature off: the page disappears.
+
+## 23. Members, history, class needs, Wowhead links, wishlist card
+1. `/gms debug`: "Guild event log: yes" (or NO: then there's no History view; tell me).
+2. Analytics → Members: everyone listed; search "warrior" or a rank name filters; click the
+   column headers to sort; alts sit under their main (untick "Alts under their main" to mix
+   them). Someone playing an alt shows "on an alt" on their main. Export CSV: paste into a
+   spreadsheet, one row per member.
+3. Analytics → History (if the log works): joins, leaves, promotions with dates; the Roster view
+   says "Last 30 days: N joined, M left".
+4. Officer: Analytics → Roster → Needs: set 2 Priest, 1 Rogue and a note, Save. The class bars
+   say "need 2"/"need 1", the Members box says "Looking for: 2 Priest, 1 Rogue, <note>". Another
+   member sees it too.
+5. Recruiter: needed classes show "needed" in the results, and Next contacts them first.
+6. Wishlist / Bank / Priorities box: paste `https://www.wowhead.com/classic/item=16866/` or type
+   `16866`: it's added like a shift-clicked item. `/gms wish 16866` works too.
+7. Put an item on your wishlist, `/gms test <that item>`: besides the popup and sound, a card
+   "From your wishlist: ... dropped: #1 on your wishlist".

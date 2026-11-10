@@ -108,6 +108,7 @@ end
 
 local function Paint(a)
     local r, g, b = Theme.Accent()
+    if a.color then r, g, b = a.color[1], a.color[2], a.color[3] end
     if a.kind == "texture" then a.region:SetColorTexture(r, g, b, a.alpha)
     elseif a.kind == "gradient" and classic then
         a.region:SetTexture(STATUSBAR)
@@ -136,6 +137,7 @@ function Theme.Accented(region, alpha, kind)
     local a = { region = region, alpha = alpha or 1, kind = kind or "texture" }
     table.insert(accented, a)
     Paint(a)
+    return a
 end
 
 local function Apply(entry)
@@ -597,6 +599,7 @@ function Theme.Sidebar(window, items, width, onSelect, showOfficer)
         for _, item in ipairs(self.items) do
             local b = self.buttons[item.page]
             local show = (not item.officer or officer) and (not item.feature or AF.Config:Feature(item.feature))
+                and (not item.show or item.show())
             b:SetShown(show)
             if show then
                 if item.officer and not headed then
@@ -653,7 +656,12 @@ function Theme.Bar(parent, width, height)
     bar.fill = bar:CreateTexture(nil, "ARTWORK")
     bar.fill:SetPoint("TOPLEFT")
     bar.fill:SetPoint("BOTTOMLEFT")
-    Theme.Accented(bar.fill, 1, "gradient")
+    local paint = Theme.Accented(bar.fill, 1, "gradient")
+    -- A fixed color (e.g. a class color), or nil for the accent again.
+    function bar:SetColor(r, g, b)
+        paint.color = r and { r, g, b } or nil
+        Paint(paint)
+    end
     function bar:SetValue(fraction)
         fraction = math.max(0, math.min(1, fraction))
         self.fill:SetShown(fraction > 0)
