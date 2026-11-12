@@ -1478,7 +1478,7 @@ function CraftTab:Build(panel)
             for _, c in ipairs(d.crafters) do
                 local member = AF.Standings:All()[c.name]
                 local r, g, b = ClassColor(member and member.classFile)
-                GameTooltip:AddDoubleLine(AF:ShortName(c.name), c.online and "online" or c.prof, r, g, b,
+                GameTooltip:AddDoubleLine(AF:ShortName(c.name), c.online and "online" or AF.Professions.LocalName(c.prof), r, g, b,
                     c.online and 0.31 or 0.6, c.online and 0.88 or 0.6, c.online and 0.65 or 0.62)
             end
             GameTooltip:AddLine(" ")
@@ -1510,7 +1510,7 @@ function CraftTab:Build(panel)
             { key = "n", label = "Recipes", width = 62, justify = "RIGHT" },
         },
         render = function(row, d)
-            row.cells.prof:SetText(d.prof)
+            row.cells.prof:SetText(AF.Professions.LocalName(d.prof))
             row.cells.prof:SetTextColor(unpack(C.dim))
             local member = AF.Standings:All()[d.name]
             row.cells.name:SetText(AF:ShortName(d.name))
@@ -2146,7 +2146,7 @@ local function GuildBlocks()
         end)
         local rows = {}
         for _, p in ipairs(list) do
-            table.insert(rows, { label = p.prof,
+            table.insert(rows, { label = AF.Professions.LocalName(p.prof),
                 fraction = #p.names / most, value = cap > 0 and ("%d  ·  %d at %d"):format(#p.names, p.maxed, cap) or tostring(#p.names),
                 names = p.names, title = p.prof })
         end

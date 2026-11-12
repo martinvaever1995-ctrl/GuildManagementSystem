@@ -31,7 +31,9 @@ local MEMBER_STEPS = { 50, 100, 200, 500 }
 local RACE_STEPS = { 100, 500, 1000 }
 local ALL_STEPS = { 1000, 5000, 10000, 25000 }
 local EACH_STEP = 100
-local BATTLEGROUNDS = { "Warsong Gulch", "Arathi Basin", "Alterac Valley" }
+local BATTLEGROUNDS = { { 489, "Warsong Gulch" }, { 529, "Arathi Basin" }, { 30, "Alterac Valley" } }
+local BG_BY_NAME = {}           -- older reports used the English zone name
+for _, bg in ipairs(BATTLEGROUNDS) do BG_BY_NAME[bg[2]] = bg[1] end
 local BG_GUILD_MIN = 5
 local SCAN_GAP = 10             -- seconds between two scans
 local RESEND = 300
@@ -61,6 +63,38 @@ end
 
 local function Plain(text) return (tostring(text or ""):gsub("[|;]", "")) end
 
+-- The same achievement whatever the client's language: professions by their
+-- English name, battlegrounds by instance ID (older records used names).
+local function CanonicalKey(key)
+    local prof = key:match("^prof:(.+)$")
+    if prof then return "prof:" .. (AF.Professions.Canonical(prof) or prof) end
+    local bg = key:match("^bg:(.+)$")
+    if bg and not tonumber(bg) and BG_BY_NAME[bg] then return "bg:" .. BG_BY_NAME[bg] end
+    return key
+end
+
+-- Folds records under another language's key into one: the earliest wins, and
+-- "before GMS" lists are joined.
+local function MergeKeys(won)
+    local out = {}
+    for key, w in pairs(won) do
+        local canon = CanonicalKey(key)
+        local have = out[canon]
+        if not have then
+            out[canon] = w
+        elseif w.pre and have.pre then
+            local seen = {}
+            for _, name in ipairs(have.p or {}) do seen[name] = true end
+            for _, name in ipairs(w.p or {}) do
+                if not seen[name] then table.insert(have.p, name) end
+            end
+        elseif w.t < have.t or (w.t == have.t and w.n < have.n) then
+            out[canon] = w
+        end
+    end
+    return out
+end
+
 -- The names in a list who run GMS.
 local function OnlyGMS(names)
     local out = {}
@@ -89,7 +123,8 @@ function Achievements:Definitions(won)
             ("The first %s in the guild to reach level %d."):format(ClassName(file), cap))
     end
     for _, prof in ipairs(AF.Professions.NAMES) do
-        Add("Professions", "prof:" .. prof, prof, ("The first to %d skill in %s."):format(PROF_CAP, prof))
+        local name = AF.Professions.LocalName(prof)
+        Add("Professions", "prof:" .. prof, name, ("The first to %d skill in %s."):format(PROF_CAP, name))
     end
     for _, a in ipairs(AF.Attunements:List()) do
         Add("Attunements", "attune:" .. a.key, a.n, ("The first attuned to %s."):format(a.n))
@@ -121,12 +156,13 @@ function Achievements:Definitions(won)
         Add("PvP", "rank:" .. rank, RankName(rank), ("The first to reach PvP rank %d."):format(rank))
     end
     for _, bg in ipairs(BATTLEGROUNDS) do
-        Add("PvP", "bg:" .. bg, bg .. " win",
-            ("The first %s win with %d or more guild members on the team."):format(bg, BG_GUILD_MIN))
+        Add("PvP", "bg:" .. bg[1], bg[2] .. " win",
+            ("The first %s win with %d or more guild members on the team."):format(bg[2], BG_GUILD_MIN))
     end
     for key, w in pairs(won) do
         if key:find("^bg:") and not seen[key] then
-            Add("PvP", key, key:sub(4) .. " win", ("The first %s win with guild members."):format(key:sub(4)))
+            local name = w.x or key:sub(4)
+            Add("PvP", key, name .. " win", ("The first %s win with guild members."):format(name))
         end
     end
     -- Killing blows on players, by the whole guild.
@@ -167,7 +203,7 @@ end
 -------------------------------------------------------------------------------
 function Achievements:Won()
     if AF.Ledger:CanRecord() then
-        local out = AF.Ledger:Achievements()
+        local out = MergeKeys(AF.Ledger:Achievements())
         for _, w in pairs(out) do
             -- Credit only members with GMS (older records can list others).
             if w.p and w.n ~= "guild" then w.p = OnlyGMS(w.p) end
@@ -217,7 +253,7 @@ local function Scan()
     scanTimer = nil
     if not AF.Config:Feature("achievements") or not AF.Ledger:CanRecord() or GetTime() < AF.Ledger.readyAt then return end
     lastScan = GetTime()
-    local won = AF.Ledger:Achievements()
+    local won = MergeKeys(AF.Ledger:Achievements())
     local baseline = not AF.db.achBaseline
     local now = GetServerTime()
     -- A first nobody has yet. pre-able ones go to everyone on the first scan.
@@ -385,7 +421,10 @@ AF:RegisterEvent("UPDATE_BATTLEFIELD_STATUS", function()
     if #guild < BG_GUILD_MIN then return end
     local zone = GetRealZoneText and GetRealZoneText() or GetZoneText()
     if type(zone) ~= "string" or AF:IsSecret(zone) or zone == "" then return end
-    Report("bg:" .. zone, { k = "bg", x = zone:sub(1, 40), p = guild, t = GetServerTime() })
+    -- The instance ID is the same in every language; the zone name is for display.
+    local instance = GetInstanceInfo and select(8, GetInstanceInfo())
+    instance = type(instance) == "number" and not AF:IsSecret(instance) and instance or nil
+    Report("bg:" .. (instance or zone), { k = "bg", x = zone:sub(1, 40), i = instance, p = guild, t = GetServerTime() })
 end)
 
 AF.Comm:On("ACHR", function(sender, data)
@@ -417,7 +456,8 @@ AF.Comm:On("ACHR", function(sender, data)
         if #guild == 0 then return end
         table.sort(guild)
         local zone = Plain(data.x):sub(1, 40)
-        AF.Ledger:RecordAch("bg:" .. zone, "group", t, guild, zone)
+        local id = type(data.i) == "number" and math.floor(data.i) or BG_BY_NAME[zone]
+        AF.Ledger:RecordAch("bg:" .. (id or zone), "group", t, guild, zone)
     else
         return
     end

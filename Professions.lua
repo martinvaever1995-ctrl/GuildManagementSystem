@@ -41,6 +41,95 @@ Professions.NAMES = {}
 for name in pairs(PROFESSIONS) do table.insert(Professions.NAMES, name) end
 table.sort(Professions.NAMES)
 
+-- Professions are stored under their English name whatever the client's language,
+-- so a French and an English player's Skinning are one profession. The skill line
+-- ID decides where the client gives it; otherwise the name in these languages.
+local SKILL_LINES = {
+    [171] = "Alchemy", [164] = "Blacksmithing", [333] = "Enchanting", [202] = "Engineering", [182] = "Herbalism",
+    [165] = "Leatherworking", [186] = "Mining", [393] = "Skinning", [197] = "Tailoring", [755] = "Jewelcrafting",
+    [773] = "Inscription", [185] = "Cooking", [129] = "First Aid", [356] = "Fishing",
+}
+local LOCAL_NAMES = {
+    frFR = { Alchemy = "Alchimie", Blacksmithing = "Forge", Enchanting = "Enchantement", Engineering = "Ingénierie",
+        Herbalism = "Herboristerie", Leatherworking = "Travail du cuir", Mining = "Minage", Skinning = "Dépeçage",
+        Tailoring = "Couture", Jewelcrafting = "Joaillerie", Inscription = "Calligraphie", Cooking = "Cuisine",
+        ["First Aid"] = "Secourisme", Fishing = "Pêche" },
+    deDE = { Alchemy = "Alchemie", Blacksmithing = "Schmiedekunst", Enchanting = "Verzauberkunst",
+        Engineering = "Ingenieurskunst", Herbalism = "Kräuterkunde", Leatherworking = "Lederverarbeitung",
+        Mining = "Bergbau", Skinning = "Kürschnerei", Tailoring = "Schneiderei", Jewelcrafting = "Juwelierskunst",
+        Inscription = "Inschriftenkunde", Cooking = "Kochkunst", ["First Aid"] = "Erste Hilfe", Fishing = "Angeln" },
+    esES = { Alchemy = "Alquimia", Blacksmithing = "Herrería", Enchanting = "Encantamiento", Engineering = "Ingeniería",
+        Herbalism = "Herboristería", Leatherworking = "Peletería", Mining = "Minería", Skinning = "Desuello",
+        Tailoring = "Sastrería", Jewelcrafting = "Joyería", Inscription = "Inscripción", Cooking = "Cocina",
+        ["First Aid"] = "Primeros auxilios", Fishing = "Pesca" },
+    itIT = { Alchemy = "Alchimia", Blacksmithing = "Forgiatura", Enchanting = "Incantamento", Engineering = "Ingegneria",
+        Herbalism = "Erbalismo", Leatherworking = "Conciatura", Mining = "Estrazione", Skinning = "Scuoiatura",
+        Tailoring = "Sartoria", Jewelcrafting = "Oreficeria", Inscription = "Runografia", Cooking = "Cucina",
+        ["First Aid"] = "Primo Soccorso", Fishing = "Pesca" },
+    ptBR = { Alchemy = "Alquimia", Blacksmithing = "Ferraria", Enchanting = "Encantamento", Engineering = "Engenharia",
+        Herbalism = "Herborismo", Leatherworking = "Couraria", Mining = "Mineração", Skinning = "Esfolamento",
+        Tailoring = "Alfaiataria", Jewelcrafting = "Joalheria", Inscription = "Escrivania", Cooking = "Culinária",
+        ["First Aid"] = "Primeiros Socorros", Fishing = "Pesca" },
+    ruRU = { Alchemy = "Алхимия", Blacksmithing = "Кузнечное дело", Enchanting = "Наложение чар",
+        Engineering = "Инженерное дело", Herbalism = "Травничество", Leatherworking = "Кожевничество",
+        Mining = "Горное дело", Skinning = "Снятие шкур", Tailoring = "Портняжное дело", Jewelcrafting = "Ювелирное дело",
+        Inscription = "Начертание", Cooking = "Кулинария", ["First Aid"] = "Первая помощь", Fishing = "Рыбная ловля" },
+}
+LOCAL_NAMES.esMX = LOCAL_NAMES.esES
+local CANONICAL = {}            -- any known name (and its lower case) -> English name
+for english in pairs(PROFESSIONS) do
+    CANONICAL[english] = english
+    CANONICAL[english:lower()] = english
+end
+for _, names in pairs(LOCAL_NAMES) do
+    for english, localized in pairs(names) do
+        CANONICAL[localized] = english
+        CANONICAL[localized:lower()] = english
+    end
+end
+
+-- The English name of a profession from its name in any of these languages or its
+-- skill line ID; nil if it isn't one we know.
+function Professions.Canonical(name, skillLine)
+    if type(skillLine) == "number" and SKILL_LINES[skillLine] then return SKILL_LINES[skillLine] end
+    if type(name) ~= "string" or AF:IsSecret(name) then return nil end
+    return CANONICAL[name] or CANONICAL[name:lower()]
+end
+
+-- A profession's name in this client's language, for display.
+function Professions.LocalName(english)
+    local names = LOCAL_NAMES[GetLocale and GetLocale() or "enUS"]
+    return names and names[english] or english
+end
+
+-- Moves professions stored under another language's name to the English one.
+local function NormalizeEntry(entry)
+    if type(entry) ~= "table" or type(entry.p) ~= "table" then return false end
+    local moves = {}
+    for prof in pairs(entry.p) do
+        local english = Professions.Canonical(prof)
+        if english and english ~= prof then table.insert(moves, { prof, english }) end
+    end
+    for _, move in ipairs(moves) do
+        local from, to = entry.p[move[1]], entry.p[move[2]]
+        entry.p[move[1]] = nil
+        if not to then
+            entry.p[move[2]] = from
+        elseif type(from) == "table" then
+            to.r, to.m = math.max(to.r or 0, from.r or 0), math.max(to.m or 0, from.m or 0)
+            for _, key in ipairs({ "i", "s" }) do
+                to[key] = to[key] or {}
+                local have = {}
+                for _, id in ipairs(to[key] or {}) do have[id] = true end
+                for _, id in ipairs(from[key] or {}) do
+                    if not have[id] then table.insert(to[key], id) end
+                end
+            end
+        end
+    end
+    return #moves > 0
+end
+
 local index                     -- id -> { { name, prof }, ... }; id < 0 is a spell
 local sendTimer, ownTimer, offerTimer
 local digests = {}              -- sender -> the digest they sent (to answer PROFQ { all })
@@ -153,6 +242,7 @@ end
 
 -- Adds recipes to a profession; returns true if anything changed.
 local function Merge(prof, rank, max, items, spells)
+    prof = Professions.Canonical(prof) or prof
     local entry = Mine().p
     local d = entry[prof]
     local changed = false
@@ -302,15 +392,16 @@ local function ScanSkills()
             local name, header, expanded, rank, _, _, max = Call(_G.GetSkillLineInfo, i)
             if header then
                 if not expanded then complete = false end
-            elseif type(name) == "string" and PROFESSIONS[name] then
-                found[name] = { rank, max }
+            elseif type(name) == "string" and PROFESSIONS[Professions.Canonical(name) or ""] then
+                found[Professions.Canonical(name)] = { rank, max }
             end
         end
     elseif type(_G.GetProfessions) == "function" then
         for _, i in ipairs({ Call(_G.GetProfessions) }) do
             if type(i) == "number" then
-                local name, _, rank, max = Call(_G.GetProfessionInfo, i)
-                if type(name) == "string" then found[name] = { rank, max } end
+                local name, _, rank, max, _, _, skillLine = Call(_G.GetProfessionInfo, i)
+                local english = Professions.Canonical(name, skillLine)
+                if english then found[english] = { rank, max } elseif type(name) == "string" then found[name] = { rank, max } end
             end
         end
     else
@@ -468,6 +559,7 @@ AF.Comm:On("PROF", function(sender, data)
     for name, packed in pairs(data) do
         -- Our own characters' data is ours alone.
         local entry = type(name) == "string" and not own[name] and Unpack(packed)
+        if entry then NormalizeEntry(entry) end      -- older clients send names in their language
         if entry and (not store[name] or store[name].t < entry.t) then
             store[name] = entry
             changed = true
@@ -539,6 +631,8 @@ function Professions:Init()
     for name, entry in pairs(Store()) do
         if type(entry) ~= "table" or type(entry.p) ~= "table" or ((entry.t or 0) > 0 and entry.t < cutoff) then
             Store()[name] = nil
+        else
+            NormalizeEntry(entry)       -- saved before professions were stored in English
         end
     end
 end

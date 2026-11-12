@@ -1,5 +1,15 @@
 # Guild Management System
 
+## v3.6.2
+
+### Fixed
+- **Professions in other game languages:** a player on a French (or German, Spanish, Italian,
+  Portuguese, Russian) client got their own "guild first" for a profession someone had already
+  maxed in English. Professions now count as one whatever the language, and those double
+  achievements merge into one: the earliest stays the winner.
+- The Crafters tab and achievements show profession names in your own game language.
+- **Battleground wins** count as one battleground whatever the language, too.
+
 ## v3.6.1
 
 ### Changes
