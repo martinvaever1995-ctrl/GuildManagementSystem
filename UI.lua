@@ -3003,7 +3003,7 @@ function AchTab:Refresh()
             for _, r in ipairs(rows) do table.insert(data, r) end
         end
     end
-    self.summary:SetText(("Guild firsts: %d of %d earned"):format(earned, total))
+    self.summary:SetText(("Guild firsts: %d of %d earned  |cff8b8d92·  only members with GMS can win|r"):format(earned, total))
     local h = AF.Hunt.Current()
     if h then
         local _, together = AF.Hunt:Board()

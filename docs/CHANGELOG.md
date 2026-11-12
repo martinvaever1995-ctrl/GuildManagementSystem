@@ -1,5 +1,12 @@
 # Guild Management System
 
+## v3.6.1
+
+### Changes
+- **Achievements are only for members with GMS installed.** Raid kills, dungeon runs and
+  battleground wins credit only the members who run GMS, and the level firsts wait for a member
+  with GMS.
+
 ## v3.6.0
 
 ### PvP

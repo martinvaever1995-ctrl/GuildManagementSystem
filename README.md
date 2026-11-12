@@ -141,7 +141,7 @@ becomes the holder and tells the raid.
   cap (and per class), to max a profession, to each attunement, the first kill of every raid
   boss and run of every end-game dungeon, PvP ranks, honorable kills, battleground wins with
   guildies, and guild milestones. New firsts pop up for everyone and are announced in guild
-  chat (officers can switch that off).
+  chat (officers can switch that off). Only members with GMS installed can win them.
 - **Race hunt and PvP kills:** officers pick an enemy race and a goal ("500 Gnomes"); the guild's
   killing blows on that race count toward it, with a leaderboard. All killing blows on players
   also count toward guild achievements per race and for all races together. Counted by guild

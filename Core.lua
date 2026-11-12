@@ -5,8 +5,8 @@
 local ADDON_NAME, AF = ...
 _G.GuildManagementSystem = AF
 
-AF.VERSION = 30600          -- major * 10000 + minor * 100 + patch; bump with ## Version
-AF.VERSION_STRING = "3.6.0"
+AF.VERSION = 30601          -- major * 10000 + minor * 100 + patch; bump with ## Version
+AF.VERSION_STRING = "3.6.1"
 AF.DISCORD = "https://discord.gg/U4UCtfRgmE"
 AF.PREFIX = "GuildMgmtSys"  -- addon message prefix (max 16 chars)
 AF.PREFIX_BULK = "GuildMgmtSysBk"   -- the slow lane for large data (Comm.lua)
@@ -135,6 +135,21 @@ function AF:UnitFullName(unit)
     if not Readable(first) or self:IsSecret(second) then return nil end
     if Readable(second) and second ~= Realm() then return first .. " " .. second end
     return first
+end
+
+-- Guild members we've had an addon message from, so we know they run GMS (per
+-- guild: name -> when last heard, updated at most hourly). Achievements are only
+-- for them.
+function AF:SawGMS(name)
+    if type(name) ~= "string" or not self.db then return end
+    if type(self.db.gmsUsers) ~= "table" then self.db.gmsUsers = {} end
+    local now = GetServerTime()
+    if (self.db.gmsUsers[name] or 0) < now - 3600 then self.db.gmsUsers[name] = now end
+end
+
+function AF:HasGMS(name)
+    if name == self.playerName then return true end
+    return type(self.db.gmsUsers) == "table" and self.db.gmsUsers[name] ~= nil
 end
 
 -- An item ID from a link, "item:12345", a Wowhead address (".../item=12345/...")

@@ -1,4 +1,4 @@
-# Guild Management System (GMS) — Spec (v3.6.0)
+# Guild Management System (GMS) — Spec (v3.6.1)
 
 ## Goal
 A WoW addon that helps officers distribute raid loot by showing each player's **effort**:
@@ -555,6 +555,10 @@ keep a copy outside the game. Nothing is stored in guild notes.
       `/gms achievements` or `/gms ach`.
     - `/gms debug` says whether this client has the PvP rank, honorable kill and battleground
       winner functions.
+    - **Only members with GMS installed can win (decided, 3.6.1).** Every client remembers
+      the guild members it has had an addon message from (`AF.db.gmsUsers`, `AF:HasGMS`);
+      the level scan skips the rest, and kills, runs and battleground wins credit only their
+      members with GMS (older records are filtered when shown). Guild milestones stay guild-wide.
 
 25. Race hunt and PvP kills (3.6.0). **Done, awaiting in-game test.**
     - **Counting** (`Hunt.lua`): each client counts its own killing blows on players from

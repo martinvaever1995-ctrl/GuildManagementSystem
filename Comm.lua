@@ -206,6 +206,7 @@ AF:RegisterEvent("CHAT_MSG_ADDON", function(_, prefix, msg, channel, sender)
     sender = AF:FullName(sender)
     if not sender then return end
     offline[sender] = nil
+    AF:SawGMS(sender)
     local header, data = msg:sub(1, 1), msg:sub(2)
     local key = sender .. "\001" .. channel .. "\001" .. prefix
     if header == "S" then

@@ -17,6 +17,9 @@
 --  to all of them, marked "before GMS" (pre), instead of to whoever came first.
 --  Raiders get them in snapshots (ac). New ones show a card; one officer's
 --  client announces them in guild chat (feature achAnnounce).
+--  Only members with GMS installed can win (decided): officers know who runs it
+--  from its addon messages (AF:HasGMS). Groups (kills, runs, battlegrounds) credit
+--  only their members with GMS.
 -------------------------------------------------------------------------------
 local _, AF = ...
 local Achievements = AF:NewModule("Achievements")
@@ -57,6 +60,15 @@ local function RankName(rank)
 end
 
 local function Plain(text) return (tostring(text or ""):gsub("[|;]", "")) end
+
+-- The names in a list who run GMS.
+local function OnlyGMS(names)
+    local out = {}
+    for _, name in ipairs(names or {}) do
+        if AF:HasGMS(name) then table.insert(out, name) end
+    end
+    return out
+end
 
 -------------------------------------------------------------------------------
 --  What there is to win
@@ -156,7 +168,11 @@ end
 function Achievements:Won()
     if AF.Ledger:CanRecord() then
         local out = AF.Ledger:Achievements()
-        for _, w in pairs(out) do w.count = w.p and #w.p or 1 end
+        for _, w in pairs(out) do
+            -- Credit only members with GMS (older records can list others).
+            if w.p and w.n ~= "guild" then w.p = OnlyGMS(w.p) end
+            w.count = w.p and #w.p or 1
+        end
         return out
     end
     local out = {}
@@ -174,8 +190,8 @@ end
 function Achievements:SnapshotField()
     if not AF.Config:Feature("achievements") then return nil end
     local out = {}
-    for key, w in pairs(AF.Ledger:Achievements()) do
-        out[key] = ("%d;%s;%d;%s"):format(w.t, Plain(w.n), w.p and #w.p or 1, Plain(w.x))
+    for key, w in pairs(self:Won()) do
+        out[key] = ("%d;%s;%d;%s"):format(w.t, Plain(w.n), w.count, Plain(w.x))
     end
     return next(out) and out or nil
 end
@@ -215,7 +231,7 @@ local function Scan()
     local count = 0
     for name, m in pairs(roster) do
         count = count + 1
-        if (m.level or 0) >= cap then
+        if (m.level or 0) >= cap and AF:HasGMS(name) then
             Try("level", name, now, nil, nil, true)
             if m.classFile then Try("level:" .. m.classFile, name, now, nil, nil, true) end
         end
@@ -274,13 +290,15 @@ local function Scan()
         end
     end
     for key, e in pairs(AF.Ledger:FirstKills()) do
-        Try("kill:" .. key, "group", e.t, e.p, Plain(e.en))
+        local group = OnlyGMS(e.p)
+        if #group > 0 then Try("kill:" .. key, "group", e.t, group, Plain(e.en)) end
     end
     for enc, g in pairs(AF.Ledger:FirstRuns()) do
         local members = {}
         for name in pairs(g.members) do table.insert(members, name) end
+        members = OnlyGMS(members)
         table.sort(members)
-        Try("run:" .. enc, "group", g.t, members, Plain(AF.Dungeons.FinalName(enc) or g.mn))
+        if #members > 0 then Try("run:" .. enc, "group", g.t, members, Plain(AF.Dungeons.FinalName(enc) or g.mn)) end
     end
     AF.db.achBaseline = true
 end
@@ -394,6 +412,9 @@ AF.Comm:On("ACHR", function(sender, data)
             if type(name) == "string" and AF.Standings:All()[name] then table.insert(guild, name) end
         end
         if #guild < BG_GUILD_MIN then return end
+        -- 5+ guild members on the team; the win goes to those with GMS.
+        guild = OnlyGMS(guild)
+        if #guild == 0 then return end
         table.sort(guild)
         local zone = Plain(data.x):sub(1, 40)
         AF.Ledger:RecordAch("bg:" .. zone, "group", t, guild, zone)
