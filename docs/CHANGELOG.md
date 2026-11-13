@@ -1,5 +1,13 @@
 # Guild Management System
 
+## v3.6.3
+
+### Fixed
+- **Wrong "Guild first!" announcements:** an officer logging in could announce a first that was
+  already won, before their GMS had received it from the other officers. Firsts that were already
+  done when an officer logs in are now saved quietly (no card, no guild chat line), and the
+  earliest claim still wins. Firsts that happen while officers are online are announced as before.
+
 ## v3.6.2
 
 ### Fixed

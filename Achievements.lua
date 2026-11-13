@@ -216,20 +216,22 @@ function Achievements:Won()
     for key, text in pairs(snap and type(snap.ac) == "table" and snap.ac or {}) do
         local t, n, count, x = tostring(text):match("^(%d+);([^;]*);(%d+);(.*)$")
         if t then
-            out[key] = { t = tonumber(t), n = n, count = tonumber(count), x = x ~= "" and x or nil, pre = tonumber(t) == 0 }
+            out[key] = { t = tonumber(t), n = n, count = tonumber(count), x = x ~= "" and x or nil, pre = tonumber(t) == 0,
+                q = type(snap.aq) == "table" and snap.aq[key] == true or nil }
         end
     end
     return out
 end
 
--- For snapshots: key -> "time;name;count;extra".
+-- For snapshots: key -> "time;name;count;extra", and the quiet ones (no card).
 function Achievements:SnapshotField()
     if not AF.Config:Feature("achievements") then return nil end
-    local out = {}
+    local out, quiet = {}, {}
     for key, w in pairs(self:Won()) do
         out[key] = ("%d;%s;%d;%s"):format(w.t, Plain(w.n), w.count, Plain(w.x))
+        if w.q then quiet[key] = true end
     end
-    return next(out) and out or nil
+    return next(out) and out or nil, next(quiet) and quiet or nil
 end
 
 -- "Spnkn Morwick", "the raid (32)", "the guild", "3 players (before GMS)".
@@ -248,6 +250,7 @@ end
 --  Officers: looking for new firsts
 -------------------------------------------------------------------------------
 local lastScan, scanTimer = 0, nil
+local scanned = false            -- this session's first scan is done
 
 local function Scan()
     scanTimer = nil
@@ -257,9 +260,13 @@ local function Scan()
     local baseline = not AF.db.achBaseline
     local now = GetServerTime()
     -- A first nobody has yet. pre-able ones go to everyone on the first scan.
-    local function Try(key, name, t, group, extra, preable)
+    -- What's already true on this session's first scan may be a first another
+    -- officer recorded and our sync hasn't brought yet: record it, but quietly
+    -- (no card, no guild chat). Kills and runs have their real time, so they're exact.
+    local function Try(key, name, t, group, extra, preable, exact)
         if won[key] then return end
-        AF.Ledger:RecordAch(key, name, t or now, group, extra, baseline and preable or nil)
+        local pre = baseline and preable or nil
+        AF.Ledger:RecordAch(key, name, t or now, group, extra, pre, not pre and not scanned and not exact or nil)
     end
 
     local roster = AF.Standings:All()
@@ -327,16 +334,17 @@ local function Scan()
     end
     for key, e in pairs(AF.Ledger:FirstKills()) do
         local group = OnlyGMS(e.p)
-        if #group > 0 then Try("kill:" .. key, "group", e.t, group, Plain(e.en)) end
+        if #group > 0 then Try("kill:" .. key, "group", e.t, group, Plain(e.en), nil, true) end
     end
     for enc, g in pairs(AF.Ledger:FirstRuns()) do
         local members = {}
         for name in pairs(g.members) do table.insert(members, name) end
         members = OnlyGMS(members)
         table.sort(members)
-        if #members > 0 then Try("run:" .. enc, "group", g.t, members, Plain(AF.Dungeons.FinalName(enc) or g.mn)) end
+        if #members > 0 then Try("run:" .. enc, "group", g.t, members, Plain(AF.Dungeons.FinalName(enc) or g.mn), nil, true) end
     end
     AF.db.achBaseline = true
+    scanned = true
 end
 
 local function QueueScan()
@@ -510,8 +518,9 @@ local function CheckNew()
     for key, w in pairs(won) do
         if not known[key] then
             known[key] = true
-            -- Only fresh ones: not old firsts arriving with a sync or a snapshot.
-            if not w.pre and GetServerTime() - w.t <= FRESH then Announce(key, w) end
+            -- Only fresh ones: not old firsts arriving with a sync or a snapshot, nor
+            -- ones an officer found already done when it logged in.
+            if not w.pre and not w.q and GetServerTime() - w.t <= FRESH then Announce(key, w) end
         end
     end
     AF:Fire("ACHIEVEMENTS_UPDATED")

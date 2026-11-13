@@ -285,8 +285,9 @@ local function BuildSnapshot()
             end
         end
     end
+    local ac, aq = AF.Achievements:SnapshotField()
     return { t = GetServerTime(), w = Standings.CurrentWeek(), s = s, sd = sd, m = AF.Ledger:AltMap(), g = g, wn = wn,
-        ac = AF.Achievements:SnapshotField(), hn = AF.Hunt:SnapshotField(), kb = AF.Hunt:KillsField() }
+        ac = ac, aq = aq, hn = AF.Hunt:SnapshotField(), kb = AF.Hunt:KillsField() }
 end
 
 local function SendSnapshot()
@@ -357,7 +358,8 @@ AF.Comm:On("SNAP", function(sender, data)
     AF.Hunt:MergeField(data.kb)       -- kill counts: keep the highest from every officer
     if current and current.t >= data.t then return end
     AF.db.snapshot = { by = sender, t = data.t, w = data.w, s = data.s, sd = data.sd, m = data.m,
-        g = type(data.g) == "table" and data.g or nil, wn = data.wn, ac = data.ac, hn = data.hn }
+        g = type(data.g) == "table" and data.g or nil, wn = data.wn, ac = data.ac, hn = data.hn,
+        aq = type(data.aq) == "table" and data.aq or nil }
     AF:Fire("STANDINGS_UPDATED")
 end)
 

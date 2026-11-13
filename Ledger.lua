@@ -29,7 +29,8 @@
 --    "void"  ref = id of an event to ignore (an officer removed it)
 --    "ach"   a = achievement key, n = who ("group" / "guild" for shared ones),
 --            p = { names } for a group, x = extra text (boss, dungeon, item),
---            pre = true when they had it before GMS (t = 0). Origin
+--            pre = true when they had it before GMS (t = 0), q = true when it was
+--            already done when this officer's client first looked (no announcement). Origin
 --            "ach:<key>:<n>", sequence = time; the earliest per key wins. Kept for good.
 --    "hunt"  n = player, h = race hunt key, v = their killing blows on that race so
 --            far (origin "hunt:<key>:<player>", sequence = v; the highest counts).
@@ -284,9 +285,9 @@ end
 
 -- A guild first (see Achievements.lua). name: the player, or "group" / "guild";
 -- group: { names } for a group; extra: boss, dungeon or item; pre: already done before GMS.
-function Ledger:RecordAch(key, name, t, group, extra, pre)
+function Ledger:RecordAch(key, name, t, group, extra, pre, quiet)
     t = pre and 0 or math.floor(t or GetServerTime())
-    return Record({ k = "ach", a = key, n = name, t = t, p = group, x = extra, pre = pre or nil },
+    return Record({ k = "ach", a = key, n = name, t = t, p = group, x = extra, pre = pre or nil, q = quiet or nil },
         "ach:" .. key .. ":" .. name, t)
 end
 
@@ -705,7 +706,7 @@ function Ledger:Achievements()
             if Live(e) and (not best or e.t < best.t or (e.t == best.t and e.n < best.n)) then best = e end
         end
         if best then
-            local w = { n = best.n, t = best.t, p = best.p, x = best.x, by = best.by, pre = best.pre }
+            local w = { n = best.n, t = best.t, p = best.p, x = best.x, by = best.by, pre = best.pre, q = best.q }
             if best.pre then
                 local names, seen = {}, {}
                 for _, e in ipairs(list) do
