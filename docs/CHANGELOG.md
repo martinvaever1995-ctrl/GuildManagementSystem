@@ -1,5 +1,16 @@
 # Guild Management System
 
+## v3.6.4
+
+### Fixed
+- **Wrong "(before GMS)" winners:** an officer whose GMS scanned for the first time later on
+  (a new officer, a reinstall) gave achievements as "before GMS" to whoever already had them,
+  and those beat the players who really got there first. Now a "before GMS" record only counts
+  if it was made before the first real one, and only when the guild has no achievements yet.
+  Old ones lose to any real record, so the right players show again.
+- The Log tab broke when it listed an achievement or race hunt record. Officers can now see
+  them there, and click one to remove it.
+
 ## v3.6.3
 
 ### Fixed

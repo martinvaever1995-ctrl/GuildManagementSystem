@@ -287,8 +287,9 @@ end
 -- group: { names } for a group; extra: boss, dungeon or item; pre: already done before GMS.
 function Ledger:RecordAch(key, name, t, group, extra, pre, quiet)
     t = pre and 0 or math.floor(t or GetServerTime())
-    return Record({ k = "ach", a = key, n = name, t = t, p = group, x = extra, pre = pre or nil, q = quiet or nil },
-        "ach:" .. key .. ":" .. name, t)
+    -- bt: when a "before GMS" record was made; it only counts if that's before the first real record.
+    return Record({ k = "ach", a = key, n = name, t = t, p = group, x = extra, pre = pre or nil, q = quiet or nil,
+        bt = pre and GetServerTime() or nil }, "ach:" .. key .. ":" .. name, t)
 end
 
 -- A player's killing blows on the race of a hunt, as their client reported them.
@@ -696,33 +697,35 @@ function Ledger:WeekWins(week)
     return out
 end
 
--- Guild firsts: key -> { n, t, p, x, by, pre }. The earliest event per key wins
--- (ties: by name). Achievements players had before GMS (pre) list all of them.
+-- Guild firsts: key -> { n, t, p, x, by, pre, q, bt }. The earliest real record
+-- wins (ties: by name). "Before GMS" records (pre) win only if they were made
+-- (bt) before the first real record; older ones without bt lose to any real record.
+-- The winning "before GMS" records list everyone in them.
 function Ledger:Achievements()
     local out = {}
     for key, list in pairs(achs) do
-        local best
+        local real
         for _, e in ipairs(list) do
-            if Live(e) and (not best or e.t < best.t or (e.t == best.t and e.n < best.n)) then best = e end
+            if Live(e) and not e.pre and (not real or e.t < real.t or (e.t == real.t and e.n < real.n)) then real = e end
         end
-        if best then
-            local w = { n = best.n, t = best.t, p = best.p, x = best.x, by = best.by, pre = best.pre, q = best.q }
-            if best.pre then
-                local names, seen = {}, {}
-                for _, e in ipairs(list) do
-                    if Live(e) and e.pre then
-                        for _, name in ipairs(e.p or { e.n }) do
-                            if not seen[name] then
-                                seen[name] = true
-                                table.insert(names, name)
-                            end
-                        end
+        local names, seen, first, firstBt = {}, {}, nil, nil
+        for _, e in ipairs(list) do
+            if Live(e) and e.pre and (not real or (e.bt and e.bt <= real.t)) then
+                first = first or e
+                if e.bt and (not firstBt or e.bt < firstBt) then firstBt = e.bt end
+                for _, name in ipairs(e.p or { e.n }) do
+                    if not seen[name] then
+                        seen[name] = true
+                        table.insert(names, name)
                     end
                 end
-                table.sort(names)
-                w.p = names
             end
-            out[key] = w
+        end
+        if first then
+            table.sort(names)
+            out[key] = { n = first.n, t = 0, p = names, x = first.x, by = first.by, pre = true, bt = firstBt }
+        elseif real then
+            out[key] = { n = real.n, t = real.t, p = real.p, x = real.x, by = real.by, q = real.q }
         end
     end
     return out

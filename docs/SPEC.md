@@ -1,4 +1,4 @@
-# Guild Management System (GMS) — Spec (v3.6.3)
+# Guild Management System (GMS) — Spec (v3.6.4)
 
 ## Goal
 A WoW addon that helps officers distribute raid loot by showing each player's **effort**:
@@ -555,6 +555,10 @@ keep a copy outside the game. Nothing is stored in guild notes.
       `/gms achievements` or `/gms ach`.
     - `/gms debug` says whether this client has the PvP rank, honorable kill and battleground
       winner functions.
+    - **"Before GMS" fixed (3.6.4):** the first scan only gives "before GMS" records when the
+      guild has no achievements at all (not on every officer's first scan). They carry `bt`,
+      when they were made, and win only if `bt` is before the first real record; older ones
+      without `bt` lose to any real record.
     - **Quiet records (3.6.3):** an officer's first scan after login may find firsts other
       officers recorded but its sync hasn't brought yet. What's already true then is recorded
       with `q` (no card, no guild chat line; snapshots list them in `aq`); the earliest record

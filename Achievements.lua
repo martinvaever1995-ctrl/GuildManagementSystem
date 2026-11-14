@@ -88,6 +88,10 @@ local function MergeKeys(won)
             for _, name in ipairs(w.p or {}) do
                 if not seen[name] then table.insert(have.p, name) end
             end
+        elseif w.pre ~= have.pre then
+            -- "Before GMS" beats a real record only if it was made first.
+            local pre, real = w.pre and w or have, w.pre and have or w
+            out[canon] = (pre.bt and pre.bt <= real.t) and pre or real
         elseif w.t < have.t or (w.t == have.t and w.n < have.n) then
             out[canon] = w
         end
@@ -257,7 +261,9 @@ local function Scan()
     if not AF.Config:Feature("achievements") or not AF.Ledger:CanRecord() or GetTime() < AF.Ledger.readyAt then return end
     lastScan = GetTime()
     local won = MergeKeys(AF.Ledger:Achievements())
-    local baseline = not AF.db.achBaseline
+    -- "Before GMS" only when the guild has no achievements yet: an officer who
+    -- joins later gets normal (quiet) records instead.
+    local baseline = not AF.db.achBaseline and next(won) == nil
     local now = GetServerTime()
     -- A first nobody has yet. pre-able ones go to everyone on the first scan.
     -- What's already true on this session's first scan may be a first another

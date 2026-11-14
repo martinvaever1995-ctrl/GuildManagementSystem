@@ -910,8 +910,16 @@ function UI.DescribeEvent(e)
     elseif e.k == "void" then
         local target = AF.Ledger:Get(e.ref)
         return "Removed: " .. (target and UI.DescribeEvent(target) or "an event")
+    elseif e.k == "ach" then
+        local who = e.n == "group" and ("a group of %d"):format(#(e.p or {})) or (e.n == "guild" and "the guild")
+            or AF:ShortName(e.n)
+        return ("Achievement %s: %s%s"):format(e.a or "?", who, e.pre and " |cff8b8d92(before GMS)|r" or "")
+    elseif e.k == "hunt" then
+        return ("Race hunt: %d killing blows"):format(e.v or 0)
+    elseif e.k == "won" then
+        return "won " .. (e.l or "?")
     end
-    return "won " .. e.l
+    return e.k or "?"
 end
 
 function Log:Refresh()
